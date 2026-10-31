@@ -18,8 +18,9 @@
     .ok { color:#9be7ad; }
     .bad { color:#ffaaaa; }
     .warn { color:#ffd58a; }
-    button { border:0; border-radius:7px; padding:11px 14px; margin:5px 7px 5px 0; background:#287bd1; color:white; font-weight:bold; }
-    button:disabled { opacity:.55; }
+    button { border:0; border-radius:7px; padding:11px 14px; margin:5px 7px 5px 0; background:#287bd1; color:white; font-weight:bold; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:wait; }
+    input { box-sizing:border-box; width:100%; padding:11px; margin:6px 0; border:1px solid #46556b; border-radius:7px; background:#101722; color:#e8edf5; }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 Consolas,monospace; color:#d7e2f2; }
     canvas { display:block; max-width:100%; background:#080a0f; border:1px solid #46556b; border-radius:6px; }
   </style>
@@ -54,6 +55,36 @@
   </section>
 
   <section class="panel">
+    <h2>JerryJS PC Bridge</h2>
+    <p class="muted">Connect this page to the Node.js bridge running on your PC. The native test asks the PC bridge to run JerryNative.exe.</p>
+
+    <label for="bridgeAddress">PC bridge address</label>
+    <input id="bridgeAddress" type="url" value="" placeholder="http://192.168.1.186:8787">
+
+    <button id="connectBridge">Connect to PC</button>
+    <button id="nativeTest">Test native C++</button>
+
+    <div id="bridgeStatus" class="result">
+      <div class="name">Bridge status</div>
+      <span class="status warn">Not checked</span>
+      <div class="muted">Enter your PC bridge address and connect.</div>
+    </div>
+
+    <div id="nativeStatus" class="result">
+      <div class="name">Native C++ status</div>
+      <span class="status warn">Not tested</span>
+      <div class="muted">The C++ test has not been run yet.</div>
+    </div>
+
+    <label for="bridgeMessage">Message to send to your PC</label>
+    <input id="bridgeMessage" type="text" maxlength="200" placeholder="Hello from JerryJS!">
+    <button id="sendBridgeMessage">Send message to PC</button>
+    <div id="sendStatus" class="muted"></div>
+
+    <p class="muted">This bridge runs on your PC. It does not execute native C++ inside the PS5 browser.</p>
+  </section>
+
+  <section class="panel">
     <h2>Timestamped log</h2>
     <pre id="log">Waiting…</pre>
     <button id="rerun">Run tests again</button>
@@ -76,6 +107,21 @@
   const $ = id => document.getElementById(id);
   const elapsed = () => (performance.now() - start).toFixed(2) + ' ms';
 
+  // When this page is served by JerryJS_PC_Bridge.js, use the same server.
+  // If hosted elsewhere, enter your PC's bridge address in the input.
+  $('bridgeAddress').value =
+    location.hostname === 'localhost' ||
+    location.hostname === '127.0.0.1' ||
+    location.port === '8787'
+      ? location.origin
+      : 'http://192.168.1.186:8787';
+
+  function bridgeURL(path) {
+    const base = $('bridgeAddress').value.trim().replace(/\/+$/, '');
+    if (!base) throw new Error('Enter your PC bridge address first.');
+    return base + path;
+  }
+
   function log(label, result, detail = '') {
     logEntries.push(`[+${elapsed()}] ${label}: ${result}${detail ? ' — ' + detail : ''}`);
     $('log').textContent = logEntries.join('\n');
@@ -84,48 +130,90 @@
   function resultRow(containerId, name, status, detail = '') {
     const row = document.createElement('div');
     row.className = 'result';
+
     const title = document.createElement('div');
     title.className = 'name';
     title.textContent = name;
+
     const badge = document.createElement('span');
-    badge.className = 'status ' + (status === 'Available' || status === 'Passed' ? 'ok' : status === 'Unavailable' || status === 'Failed' ? 'bad' : 'warn');
+    badge.className = 'status ' +
+      (status === 'Available' || status === 'Passed' ? 'ok' :
+       status === 'Unavailable' || status === 'Failed' ? 'bad' : 'warn');
     badge.textContent = status;
+
     const info = document.createElement('div');
     info.className = 'muted';
     info.textContent = detail;
+
     row.append(title, badge, info);
     $(containerId).appendChild(row);
   }
 
+  function setPanel(id, title, status, detail) {
+    const panel = $(id);
+    panel.textContent = '';
+
+    const heading = document.createElement('div');
+    heading.className = 'name';
+    heading.textContent = title;
+
+    const badge = document.createElement('span');
+    badge.className = 'status ' +
+      (status === 'Connected' || status === 'Passed' ? 'ok' :
+       status === 'Failed' || status === 'Disconnected' ? 'bad' : 'warn');
+    badge.textContent = status;
+
+    const info = document.createElement('div');
+    info.className = 'muted';
+    info.textContent = detail;
+
+    panel.append(heading, badge, info);
+  }
+
   function resetResults() {
-    for (const id of ['gpuResults', 'browserResults', 'boundaryResults']) $(id).textContent = '';
+    for (const id of ['gpuResults', 'browserResults', 'boundaryResults']) {
+      $(id).textContent = '';
+    }
     logEntries.length = 0;
     $('log').textContent = '';
     $('copyStatus').textContent = '';
   }
 
   function safeRead(fn) {
-    try { return fn(); } catch (error) { return `Error: ${error && error.message ? error.message : String(error)}`; }
+    try {
+      return fn();
+    } catch (error) {
+      return `Error: ${error && error.message ? error.message : String(error)}`;
+    }
   }
 
   function testWebGL(contextName) {
-    const canvas = contextName === 'WebGL 1' ? $('glCanvas') : document.createElement('canvas');
+    const canvas = contextName === 'WebGL 1'
+      ? $('glCanvas')
+      : document.createElement('canvas');
+
     const gl = safeRead(() => canvas.getContext(contextName));
+
     if (typeof gl === 'string') {
       resultRow('gpuResults', contextName, 'Failed', gl);
       log(contextName, 'Failed', gl);
       return;
     }
+
     if (!gl) {
-      resultRow('gpuResults', contextName, 'Unavailable', 'The browser did not provide this graphics context.');
+      resultRow('gpuResults', contextName, 'Unavailable',
+        'The browser did not provide this graphics context.');
       log(contextName, 'Unavailable');
       return;
     }
+
     const version = safeRead(() => gl.getParameter(gl.VERSION));
     const shading = safeRead(() => gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
-    resultRow('gpuResults', contextName, 'Available', `Context created. Version: ${version}; shading language: ${shading}`);
+
+    resultRow('gpuResults', contextName, 'Available',
+      `Context created. Version: ${version}; shading language: ${shading}`);
     log(contextName, 'Available', 'graphics context created');
-    // Draw a harmless clear colour to confirm a basic graphics command is accepted.
+
     safeRead(() => {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clearColor(0.08, 0.35, 0.65, 1.0);
@@ -136,45 +224,62 @@
 
   async function testWebGPU() {
     if (!navigator.gpu) {
-      resultRow('gpuResults', 'WebGPU', 'Unavailable', 'navigator.gpu is not exposed to this webpage.');
+      resultRow('gpuResults', 'WebGPU', 'Unavailable',
+        'navigator.gpu is not exposed to this webpage.');
       log('WebGPU', 'Unavailable', 'navigator.gpu not exposed');
       return;
     }
-    resultRow('gpuResults', 'WebGPU API', 'Available', 'navigator.gpu is exposed. Checking whether an adapter can be requested.');
+
+    resultRow('gpuResults', 'WebGPU API', 'Available',
+      'navigator.gpu is exposed. Checking whether an adapter can be requested.');
     log('WebGPU API', 'Available');
+
     try {
       const adapter = await Promise.race([
         navigator.gpu.requestAdapter(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Adapter request timed out after 4 seconds')), 4000))
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Adapter request timed out after 4 seconds')), 4000))
       ]);
+
       if (!adapter) {
-        resultRow('gpuResults', 'WebGPU adapter', 'Unavailable', 'The browser did not return an adapter.');
+        resultRow('gpuResults', 'WebGPU adapter', 'Unavailable',
+          'The browser did not return an adapter.');
         log('WebGPU adapter', 'Unavailable', 'no adapter returned');
         return;
       }
-      const features = adapter.features ? Array.from(adapter.features).join(', ') : 'Not reported';
-      resultRow('gpuResults', 'WebGPU adapter', 'Available', `Adapter returned. Optional features: ${features || 'none reported'}`);
+
+      const features = adapter.features
+        ? Array.from(adapter.features).join(', ')
+        : 'Not reported';
+
+      resultRow('gpuResults', 'WebGPU adapter', 'Available',
+        `Adapter returned. Optional features: ${features || 'none reported'}`);
       log('WebGPU adapter', 'Available', 'adapter returned');
+
       try {
         const device = await Promise.race([
           adapter.requestDevice(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Device request timed out after 4 seconds')), 4000))
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Device request timed out after 4 seconds')), 4000))
         ]);
-        resultRow('gpuResults', 'WebGPU device', 'Passed', 'A standard browser-managed GPU device was created and immediately released.');
+
+        resultRow('gpuResults', 'WebGPU device', 'Passed',
+          'A standard browser-managed GPU device was created and immediately released.');
         log('WebGPU device', 'Passed', 'device request succeeded');
         device.destroy();
       } catch (error) {
-        resultRow('gpuResults', 'WebGPU device', 'Failed', error.message || String(error));
+        resultRow('gpuResults', 'WebGPU device', 'Failed',
+          error.message || String(error));
         log('WebGPU device', 'Failed', error.message || String(error));
       }
     } catch (error) {
-      resultRow('gpuResults', 'WebGPU adapter', 'Failed', error.message || String(error));
+      resultRow('gpuResults', 'WebGPU adapter', 'Failed',
+        error.message || String(error));
       log('WebGPU adapter', 'Failed', error.message || String(error));
     }
   }
 
   async function testStorage() {
-    // Only writes and removes a short test value belonging to this website.
     const localResult = safeRead(() => {
       const key = 'jerryjs_v4_test';
       localStorage.setItem(key, 'ok');
@@ -182,26 +287,44 @@
       localStorage.removeItem(key);
       return passed;
     });
+
     const localPassed = localResult === true;
-    resultRow('browserResults', 'Local Storage', localPassed ? 'Passed' : 'Failed', localPassed ? 'Temporary test value written, read and removed.' : String(localResult));
-    log('Local Storage test', localPassed ? 'Passed' : 'Failed', String(localResult));
+    resultRow('browserResults', 'Local Storage',
+      localPassed ? 'Passed' : 'Failed',
+      localPassed
+        ? 'Temporary test value written, read and removed.'
+        : String(localResult));
+    log('Local Storage test', localPassed ? 'Passed' : 'Failed',
+      String(localResult));
 
-    resultRow('browserResults', 'IndexedDB API', typeof indexedDB === 'undefined' ? 'Unavailable' : 'Available', 'API presence only; no database is created.');
-    log('IndexedDB API', typeof indexedDB === 'undefined' ? 'Unavailable' : 'Available');
+    resultRow('browserResults', 'IndexedDB API',
+      typeof indexedDB === 'undefined' ? 'Unavailable' : 'Available',
+      'API presence only; no database is created.');
+    log('IndexedDB API',
+      typeof indexedDB === 'undefined' ? 'Unavailable' : 'Available');
 
-    if (navigator.storage && typeof navigator.storage.estimate === 'function') {
+    if (navigator.storage &&
+        typeof navigator.storage.estimate === 'function') {
       try {
         const estimate = await navigator.storage.estimate();
-        const usage = Number.isFinite(estimate.usage) ? `${estimate.usage} bytes used` : 'usage not reported';
-        const quota = Number.isFinite(estimate.quota) ? `${estimate.quota} bytes quota` : 'quota not reported';
-        resultRow('browserResults', 'Storage estimate', 'Available', `${usage}; ${quota}. These figures concern website-managed storage, not the console drive.`);
+        const usage = Number.isFinite(estimate.usage)
+          ? `${estimate.usage} bytes used`
+          : 'usage not reported';
+        const quota = Number.isFinite(estimate.quota)
+          ? `${estimate.quota} bytes quota`
+          : 'quota not reported';
+
+        resultRow('browserResults', 'Storage estimate', 'Available',
+          `${usage}; ${quota}. These figures concern website-managed storage, not the console drive.`);
         log('Storage estimate', 'Available', `${usage}; ${quota}`);
       } catch (error) {
-        resultRow('browserResults', 'Storage estimate', 'Failed', error.message || String(error));
+        resultRow('browserResults', 'Storage estimate', 'Failed',
+          error.message || String(error));
         log('Storage estimate', 'Failed', error.message || String(error));
       }
     } else {
-      resultRow('browserResults', 'Storage estimate', 'Unavailable', 'Storage estimate API not exposed.');
+      resultRow('browserResults', 'Storage estimate', 'Unavailable',
+        'Storage estimate API not exposed.');
       log('Storage estimate', 'Unavailable');
     }
   }
@@ -217,8 +340,11 @@
       ['File System Access picker', typeof window.showOpenFilePicker === 'function'],
       ['Gamepad API', typeof navigator.getGamepads === 'function']
     ];
+
     checks.forEach(([name, available]) => {
-      resultRow('browserResults', name, available ? 'Available' : 'Unavailable', 'Presence check only; no external files or protected devices are accessed.');
+      resultRow('browserResults', name,
+        available ? 'Available' : 'Unavailable',
+        'Presence check only; no external files or protected devices are accessed.');
       log(name, available ? 'Available' : 'Unavailable');
     });
   }
@@ -231,41 +357,161 @@
       ['Page visibility', document.visibilityState],
       ['Online status', navigator.onLine ? 'Online' : 'Offline']
     ];
+
     checks.forEach(([name, value]) => {
       resultRow('boundaryResults', name, 'Reported', String(value));
       log(name, 'Reported', String(value));
     });
-    resultRow('boundaryResults', 'Operating-system access', 'Not tested', 'Webpages do not have a standard API for arbitrary PS5 system access. This diagnostic does not attempt a sandbox escape.');
+
+    resultRow('boundaryResults', 'Operating-system access', 'Not tested',
+      'Webpages do not have a standard API for arbitrary PS5 system access. This diagnostic does not attempt a sandbox escape.');
+  }
+
+  async function connectBridge() {
+    const button = $('connectBridge');
+    button.disabled = true;
+    setPanel('bridgeStatus', 'Bridge status', 'Checking', 'Contacting the PC…');
+
+    try {
+      const response = await fetch(bridgeURL('/status'), {
+        method: 'GET',
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.ok) {
+        throw new Error(data.message || 'Bridge reported an error.');
+      }
+
+      setPanel('bridgeStatus', 'Bridge status', 'Connected',
+        `${data.bridge || 'PC bridge'} is responding. Messages received: ${data.messageCount ?? 'not reported'}. Native executable: ${data.nativeModule ? 'found' : 'not found'}.`);
+      log('PC bridge', 'Connected', bridgeURL('/status'));
+    } catch (error) {
+      setPanel('bridgeStatus', 'Bridge status', 'Disconnected',
+        error.message || String(error));
+      log('PC bridge', 'Failed', error.message || String(error));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function testNative() {
+    const button = $('nativeTest');
+    button.disabled = true;
+    setPanel('nativeStatus', 'Native C++ status', 'Checking',
+      'Asking the PC bridge to run JerryNative.exe…');
+
+    try {
+      const response = await fetch(bridgeURL('/native/status'), {
+        method: 'GET',
+        cache: 'no-store'
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      setPanel('nativeStatus', 'Native C++ status', 'Passed',
+        `${data.message || 'Native C++ test completed.'} Module: ${data.module || 'JerryNative'}; version: ${data.version || 'unknown'}.`);
+
+      log('Native C++ test', 'Passed',
+        data.message || 'PC executable returned successfully');
+    } catch (error) {
+      setPanel('nativeStatus', 'Native C++ status', 'Failed',
+        error.message || String(error));
+      log('Native C++ test', 'Failed', error.message || String(error));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function sendBridgeMessage() {
+    const message = $('bridgeMessage').value.trim();
+
+    if (!message) {
+      $('sendStatus').textContent = 'Enter a message first.';
+      return;
+    }
+
+    const button = $('sendBridgeMessage');
+    button.disabled = true;
+    $('sendStatus').textContent = 'Sending…';
+
+    try {
+      const response = await fetch(bridgeURL('/send'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      $('sendStatus').textContent =
+        data.reply || 'Message received by the PC bridge.';
+      log('Message sent to PC', 'Passed', message);
+    } catch (error) {
+      $('sendStatus').textContent =
+        'Could not send message: ' + (error.message || String(error));
+      log('Message sent to PC', 'Failed', error.message || String(error));
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function lifecycle(name) {
-    log('Lifecycle event', name, `document.readyState=${document.readyState}`);
+    log('Lifecycle event', name,
+      `document.readyState=${document.readyState}`);
   }
 
   async function runTests() {
     resetResults();
     $('runStatus').textContent = 'Tests running…';
-    $('timing').textContent = `First JavaScript timestamp: ${start.toFixed(2)} ms on this page load`;
-    log('JavaScript execution began', 'Observed', 'page-relative timer started');
+    $('timing').textContent =
+      `First JavaScript timestamp: ${start.toFixed(2)} ms on this page load`;
+
+    log('JavaScript execution began', 'Observed',
+      'page-relative timer started');
 
     testWebGL('WebGL 1');
     testWebGL('WebGL 2');
     testBrowserAPIs();
     testBoundaryIndicators();
+
     await testStorage();
     await testWebGPU();
 
-    $('runStatus').textContent = 'Tests finished. All timestamps are relative to this page’s JavaScript start.';
+    $('runStatus').textContent =
+      'Tests finished. All timestamps are relative to this page’s JavaScript start.';
     log('Diagnostic run', 'Complete');
   }
 
-  document.addEventListener('readystatechange', () => lifecycle('readystatechange'));
-  document.addEventListener('DOMContentLoaded', () => lifecycle('DOMContentLoaded'));
-  window.addEventListener('load', () => lifecycle('window load'));
-  window.addEventListener('pageshow', () => lifecycle('pageshow'));
-  document.addEventListener('visibilitychange', () => lifecycle('visibilitychange'));
+  document.addEventListener('readystatechange',
+    () => lifecycle('readystatechange'));
+  document.addEventListener('DOMContentLoaded',
+    () => lifecycle('DOMContentLoaded'));
+  window.addEventListener('load',
+    () => lifecycle('window load'));
+  window.addEventListener('pageshow',
+    () => lifecycle('pageshow'));
+  document.addEventListener('visibilitychange',
+    () => lifecycle('visibilitychange'));
 
   $('rerun').addEventListener('click', runTests);
+  $('connectBridge').addEventListener('click', connectBridge);
+  $('nativeTest').addEventListener('click', testNative);
+  $('sendBridgeMessage').addEventListener('click', sendBridgeMessage);
+
   $('copy').addEventListener('click', async () => {
     const text = [
       'JerryJS v4 results',
@@ -275,13 +521,20 @@
       '--- API results ---',
       $('gpuResults').innerText,
       $('browserResults').innerText,
-      $('boundaryResults').innerText
+      $('boundaryResults').innerText,
+      '--- PC bridge ---',
+      $('bridgeStatus').innerText,
+      $('nativeStatus').innerText,
+      $('sendStatus').textContent
     ].join('\n');
+
     try {
       await navigator.clipboard.writeText(text);
-      $('copyStatus').textContent = 'Results copied. Paste them into your chat.';
+      $('copyStatus').textContent =
+        'Results copied. Paste them into your chat.';
     } catch (_) {
-      $('copyStatus').textContent = 'Clipboard access was unavailable. You can select and copy the log manually.';
+      $('copyStatus').textContent =
+        'Clipboard access was unavailable. You can select and copy the log manually.';
     }
   });
 
@@ -299,4 +552,3 @@
 </script>
 </body>
 </html>
-
