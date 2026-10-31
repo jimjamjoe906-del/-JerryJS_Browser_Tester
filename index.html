@@ -1,0 +1,115 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JerryJS Browser Tester</title>
+
+<style>
+body {
+    background: #10131b;
+    color: #e8edf5;
+    font-family: Arial, sans-serif;
+    padding: 20px;
+}
+h1 { color: #63b3ff; }
+.panel {
+    background: #1c2330;
+    padding: 15px;
+    margin: 12px 0;
+    border-radius: 10px;
+}
+.result { color: #8ee6a0; }
+button {
+    padding: 12px;
+    background: #287bd1;
+    color: white;
+    border: 0;
+    border-radius: 6px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>JerryJS</h1>
+<p>Browser Startup Diagnostic v1.0</p>
+
+<div class="panel">
+<h3>Startup information</h3>
+<p id="started">JavaScript: starting...</p>
+<p id="loaded">Page load: waiting...</p>
+<p id="elapsed">Elapsed time: measuring...</p>
+</div>
+
+<div class="panel">
+<h3>Browser capabilities</h3>
+<div id="apis"></div>
+</div>
+
+<div class="panel">
+<h3>Responsiveness</h3>
+<p id="response">Waiting for measurements...</p>
+</div>
+
+<div class="panel">
+<h3>Test controls</h3>
+<button onclick="runTest()">Run again</button>
+</div>
+
+<script>
+const startTime = performance.now();
+
+document.getElementById("started").textContent =
+    "JavaScript started: " + startTime.toFixed(2) + " ms";
+
+function checkAPI(name, available) {
+    return "<p>" + name + ": <span class='result'>" +
+        (available ? "Available" : "Unavailable") +
+        "</span></p>";
+}
+
+function checkBrowser() {
+    const apis = document.getElementById("apis");
+
+    apis.innerHTML =
+        checkAPI("Local Storage", typeof localStorage !== "undefined") +
+        checkAPI("Session Storage", typeof sessionStorage !== "undefined") +
+        checkAPI("WebAssembly", typeof WebAssembly !== "undefined") +
+        checkAPI("WebSocket", typeof WebSocket !== "undefined") +
+        checkAPI("Fetch", typeof fetch !== "undefined") +
+        checkAPI("Web Workers", typeof Worker !== "undefined") +
+        checkAPI("IndexedDB", typeof indexedDB !== "undefined") +
+        checkAPI("Performance API", typeof performance !== "undefined");
+}
+
+function runTest() {
+    const before = performance.now();
+
+    requestAnimationFrame(function() {
+        const after = performance.now();
+
+        document.getElementById("response").textContent =
+            "Animation frame response: " +
+            (after - before).toFixed(2) + " ms";
+
+        document.getElementById("elapsed").textContent =
+            "Elapsed since JavaScript started: " +
+            (after - startTime).toFixed(2) + " ms";
+    });
+}
+
+window.addEventListener("load", function() {
+    document.getElementById("loaded").textContent =
+        "Page loaded: " + performance.now().toFixed(2) + " ms";
+
+    checkBrowser();
+    runTest();
+});
+
+checkBrowser();
+</script>
+
+</body>
+</html>
