@@ -1,48 +1,45 @@
 
-'use strict';
+const http = require("http");
+const os = require("os");
+const path = require("path");
+const fs = require("fs");
+const { execFile } = require("child_process");
 
-const http = require('http');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
-const { execFile } = require('child_process');
-
+const HOST = "0.0.0.0";
 const PORT = 8787;
-const HOST = '0.0.0.0';
 
-const HTML_FILE = path.join(__dirname, 'index2.html');
-const NATIVE_FILE = path.join(__dirname, 'JerryNative.exe');
+const HTML_FILE = path.join(__dirname, "index2.html");
+const NATIVE_FILE = path.join(__dirname, "JerryNative.exe");
 
 let messageCount = 0;
-let nativeCalls = 0;
 
-function sendJSON(res, status, data) {
-    res.writeHead(status, {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Cache-Control': 'no-store'
+function sendJSON(res, statusCode, data) {
+    res.writeHead(statusCode, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Cache-Control": "no-store"
     });
+
     res.end(JSON.stringify(data));
 }
 
-function sendHTML(res) {
-    fs.readFile(HTML_FILE, (error, data) => {
-        if (error) {
-            sendJSON(res, 500, {
-                ok: false,
-                message: 'index2.html could not be read. Check that it is beside the bridge script.'
-            });
-            return;
-        }
+function readRequestBody(req) {
+    return new Promise((resolve, reject) => {
+        let body = "";
 
-        res.writeHead(200, {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-store'
+        req.on("data", chunk => {
+            body += chunk;
+
+            if (body.length > 2048) {
+                reject(new Error("Request too large"));
+                req.destroy();
+            }
         });
-        res.end(data);
+
+        req.on("end", () => resolve(body));
+        req.on("error", reject);
     });
 }
 
@@ -51,146 +48,126 @@ function runNative() {
         if (!fs.existsSync(NATIVE_FILE)) {
             resolve({
                 ok: false,
-                message: 'JerryNative.exe was not found. Compile JerryNative.cpp first.'
+                message: "JerryNative.exe was not found."
             });
             return;
         }
 
-        nativeCalls++;
+        execFile(
+            NATIVE_FILE,
+            [],
+            {
+                timeout: 5000,
+                windowsHide: true,
+                maxBuffer: 1024 * 1024
+            },
+            (error, stdout, stderr) => {
+                if (error) {
+                    resolve({
+                        ok: false,
+                        message: error.message,
+                        stderr: stderr || ""
+                    });
+                    return;
+                }
 
-        execFile(NATIVE_FILE, [], {
-            timeout: 5000,
-            windowsHide: true,
-            maxBuffer: 1024 * 1024
-        }, (error, stdout, stderr) => {
-            if (error) {
-                resolve({
-                    ok: false,
-                    message: 'Native executable failed: ' + error.message,
-                    errorOutput: String(stderr || '').slice(0, 1000)
-                });
-                return;
+                try {
+                    resolve(JSON.parse(stdout.trim()));
+                } catch {
+                    resolve({
+                        ok: false,
+                        message: "Native program returned invalid JSON.",
+                        output: stdout
+                    });
+                }
             }
-
-            try {
-                resolve({
-                    ...JSON.parse(stdout.trim()),
-                    nativeCalls
-                });
-            } catch (_) {
-                resolve({
-                    ok: false,
-                    message: 'Native executable returned invalid JSON.',
-                    output: String(stdout || '').slice(0, 1000)
-                });
-            }
-        });
-    });
-}
-
-function readRequestBody(req, limit = 2048) {
-    return new Promise((resolve, reject) => {
-        let body = '';
-        let size = 0;
-        let tooLarge = false;
-
-        req.on('data', chunk => {
-            size += chunk.length;
-
-            if (size > limit) {
-                tooLarge = true;
-                return;
-            }
-
-            body += chunk.toString('utf8');
-        });
-
-        req.on('end', () => {
-            if (tooLarge) {
-                reject(new Error('Request body too large.'));
-            } else {
-                resolve(body);
-            }
-        });
-
-        req.on('error', reject);
+        );
     });
 }
 
 const server = http.createServer(async (req, res) => {
-    if (req.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
         res.writeHead(204, {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type"
         });
+
         res.end();
         return;
     }
 
-    const pathname = new URL(
-        req.url,
-        `http://${req.headers.host || 'localhost'}`
-    ).pathname;
+    const url = new URL(req.url, `http://${req.headers.host}`);
 
-    if (req.method === 'GET' && pathname === '/') {
-        sendHTML(res);
+    if (url.pathname === "/" || url.pathname === "/index2.html") {
+        if (!fs.existsSync(HTML_FILE)) {
+            res.writeHead(404, {
+                "Content-Type": "text/plain"
+            });
+
+            res.end("index2.html could not be read. Check that it is beside the bridge script.");
+            return;
+        }
+
+        res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store"
+        });
+
+        fs.createReadStream(HTML_FILE).pipe(res);
         return;
     }
 
-    if (req.method === 'GET' && pathname === '/status') {
+    if (url.pathname === "/status") {
         sendJSON(res, 200, {
             ok: true,
-            bridge: 'JerryJS PC Bridge',
+            bridge: "JerryJS PC Bridge",
             messageCount,
             nativeModule: fs.existsSync(NATIVE_FILE)
         });
         return;
     }
 
-    if (req.method === 'GET' && pathname === '/native/status') {
+    if (url.pathname === "/native/status") {
         const result = await runNative();
-        sendJSON(res, result.ok ? 200 : 500, result);
+        sendJSON(res, 200, result);
         return;
     }
 
-    if (req.method === 'POST' && pathname === '/send') {
+    if (url.pathname === "/send" && req.method === "POST") {
         try {
             const body = await readRequestBody(req);
             const data = JSON.parse(body);
 
-            if (typeof data.message !== 'string') {
+            if (typeof data.message !== "string" || !data.message.trim()) {
                 sendJSON(res, 400, {
                     ok: false,
-                    message: 'Message must be text.'
+                    message: "A message is required."
                 });
                 return;
             }
 
-            const message = data.message.trim();
-
-            if (!message || message.length > 200) {
+            if (data.message.length > 200) {
                 sendJSON(res, 400, {
                     ok: false,
-                    message: 'Message must contain between 1 and 200 characters.'
+                    message: "Message is too long."
                 });
                 return;
             }
 
             messageCount++;
-            console.log('[PS5 MESSAGE] ' + message);
+
+            console.log("[PS5 MESSAGE]", data.message);
 
             sendJSON(res, 200, {
                 ok: true,
-                reply: 'Your PC received the message!',
+                reply: "Your PC received the message!",
                 messageCount
             });
         } catch (error) {
             sendJSON(res, 400, {
                 ok: false,
-                message: error.message === 'Request body too large.'
-                    ? error.message
-                    : 'Invalid JSON request.'
+                message: error.message
             });
         }
 
@@ -199,24 +176,22 @@ const server = http.createServer(async (req, res) => {
 
     sendJSON(res, 404, {
         ok: false,
-        message: 'Route not found.'
+        message: "Endpoint not found."
     });
 });
 
 server.listen(PORT, HOST, () => {
-    console.log('\nJERRYJS PC BRIDGE RUNNING\n');
+    console.log("\nJERRYJS PC BRIDGE RUNNING\n");
 
-    for (const entries of Object.values(os.networkInterfaces())) {
-        for (const item of entries || []) {
-            if (item.family === 'IPv4' && !item.internal) {
-                console.log(`http://${item.address}:${PORT}/`);
+    const interfaces = os.networkInterfaces();
+
+    for (const entries of Object.values(interfaces)) {
+        for (const network of entries || []) {
+            if (network.family === "IPv4" && !network.internal) {
+                console.log(`http://${network.address}:${PORT}/`);
             }
         }
     }
 
-    console.log('\nKeep this window open.');
-});
-
-server.on('error', error => {
-    console.error('Bridge server error:', error.message);
+    console.log("\nKeep this window open.\n");
 });
