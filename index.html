@@ -1,230 +1,302 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JerryJS v3 — API Timeline</title>
-<style>
-body {
-  background: #10131b;
-  color: #e8edf5;
-  font-family: Arial, sans-serif;
-  padding: 18px;
-}
-h1 { color: #63b3ff; }
-.panel {
-  background: #1c2330;
-  padding: 14px;
-  margin: 12px 0;
-  border-radius: 9px;
-}
-button {
-  padding: 10px 14px;
-  background: #287bd1;
-  color: white;
-  border: 0;
-  border-radius: 6px;
-}
-pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>JerryJS v4 — Browser Boundary Diagnostic</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin:0; padding:20px; background:#10131b; color:#e8edf5; font:16px/1.45 Arial,sans-serif; }
+    main { max-width:850px; margin:auto; }
+    h1 { color:#73b9ff; margin-bottom:4px; }
+    .sub, .muted { color:#aab6c8; }
+    .panel { background:#1c2330; border:1px solid #303b4d; border-radius:10px; padding:14px; margin:14px 0; }
+    .result { border-bottom:1px solid #303b4d; padding:9px 0; }
+    .result:last-child { border-bottom:0; }
+    .name { font-weight:bold; }
+    .status { display:inline-block; margin:4px 0; padding:2px 8px; border-radius:12px; background:#344155; font-size:13px; }
+    .ok { color:#9be7ad; }
+    .bad { color:#ffaaaa; }
+    .warn { color:#ffd58a; }
+    button { border:0; border-radius:7px; padding:11px 14px; margin:5px 7px 5px 0; background:#287bd1; color:white; font-weight:bold; }
+    button:disabled { opacity:.55; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 Consolas,monospace; color:#d7e2f2; }
+    canvas { display:block; max-width:100%; background:#080a0f; border:1px solid #46556b; border-radius:6px; }
+  </style>
 </head>
 <body>
-<h1>JerryJS</h1>
-<p>API Appearance Timeline v3</p>
+<main>
+  <h1>JerryJS</h1>
+  <div class="sub">v4 — Browser Boundary Diagnostic</div>
 
-<div class="panel">
-  <h3>Timeline status</h3>
-  <p id="status">Starting...</p>
-  <p id="elapsed">Elapsed: 0 ms</p>
-</div>
+  <section class="panel">
+    <h2>Run status</h2>
+    <div id="runStatus">Starting tests…</div>
+    <div id="timing" class="muted">JavaScript start: recording…</div>
+    <p class="muted">This page tests interfaces exposed to ordinary webpages. It cannot inspect the PS5 operating system or measure browser activity before this page's JavaScript starts.</p>
+  </section>
 
-<div class="panel">
-  <h3>Lifecycle events</h3>
-  <pre id="events"></pre>
-</div>
+  <section class="panel">
+    <h2>GPU interfaces</h2>
+    <div id="gpuResults">Testing…</div>
+    <canvas id="glCanvas" width="160" height="80" aria-label="Small WebGL diagnostic canvas"></canvas>
+  </section>
 
-<div class="panel">
-  <h3>API availability results</h3>
-  <pre id="results">Collecting results...</pre>
-</div>
+  <section class="panel">
+    <h2>Browser and storage interfaces</h2>
+    <div id="browserResults">Testing…</div>
+  </section>
 
-<div class="panel">
-  <button id="rerun">Run again</button>
-  <button id="copy">Select results</button>
-</div>
+  <section class="panel">
+    <h2>Security boundary indicators</h2>
+    <div id="boundaryResults">Testing…</div>
+    <p class="muted">A successful API test means the browser allowed that webpage feature. It does not mean the page has operating-system or unrestricted hardware access.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Timestamped log</h2>
+    <pre id="log">Waiting…</pre>
+    <button id="rerun">Run tests again</button>
+    <button id="copy">Copy results</button>
+    <div id="copyStatus" class="muted"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Browser information</h2>
+    <pre id="browserInfo">Collecting…</pre>
+  </section>
+</main>
 
 <script>
-(function () {
+(() => {
+  'use strict';
+
   const start = performance.now();
-  const status = document.getElementById("status");
-  const elapsed = document.getElementById("elapsed");
-  const eventsBox = document.getElementById("events");
-  const resultsBox = document.getElementById("results");
+  const logEntries = [];
+  const $ = id => document.getElementById(id);
+  const elapsed = () => (performance.now() - start).toFixed(2) + ' ms';
 
-  const events = [];
-  const samples = [];
-  const durationMs = 5000;
-  const sampleIntervalMs = 100;
-
-  let finished = false;
-  let timerId = null;
-
-  function timestamp() {
-    return +(performance.now() - start).toFixed(2);
+  function log(label, result, detail = '') {
+    logEntries.push(`[+${elapsed()}] ${label}: ${result}${detail ? ' — ' + detail : ''}`);
+    $('log').textContent = logEntries.join('\n');
   }
 
-  function recordEvent(name) {
-    events.push({
-      timeMs: timestamp(),
-      event: name,
-      readyState: document.readyState,
-      visibility: document.visibilityState
+  function resultRow(containerId, name, status, detail = '') {
+    const row = document.createElement('div');
+    row.className = 'result';
+    const title = document.createElement('div');
+    title.className = 'name';
+    title.textContent = name;
+    const badge = document.createElement('span');
+    badge.className = 'status ' + (status === 'Available' || status === 'Passed' ? 'ok' : status === 'Unavailable' || status === 'Failed' ? 'bad' : 'warn');
+    badge.textContent = status;
+    const info = document.createElement('div');
+    info.className = 'muted';
+    info.textContent = detail;
+    row.append(title, badge, info);
+    $(containerId).appendChild(row);
+  }
+
+  function resetResults() {
+    for (const id of ['gpuResults', 'browserResults', 'boundaryResults']) $(id).textContent = '';
+    logEntries.length = 0;
+    $('log').textContent = '';
+    $('copyStatus').textContent = '';
+  }
+
+  function safeRead(fn) {
+    try { return fn(); } catch (error) { return `Error: ${error && error.message ? error.message : String(error)}`; }
+  }
+
+  function testWebGL(contextName) {
+    const canvas = contextName === 'WebGL 1' ? $('glCanvas') : document.createElement('canvas');
+    const gl = safeRead(() => canvas.getContext(contextName));
+    if (typeof gl === 'string') {
+      resultRow('gpuResults', contextName, 'Failed', gl);
+      log(contextName, 'Failed', gl);
+      return;
+    }
+    if (!gl) {
+      resultRow('gpuResults', contextName, 'Unavailable', 'The browser did not provide this graphics context.');
+      log(contextName, 'Unavailable');
+      return;
+    }
+    const version = safeRead(() => gl.getParameter(gl.VERSION));
+    const shading = safeRead(() => gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
+    resultRow('gpuResults', contextName, 'Available', `Context created. Version: ${version}; shading language: ${shading}`);
+    log(contextName, 'Available', 'graphics context created');
+    // Draw a harmless clear colour to confirm a basic graphics command is accepted.
+    safeRead(() => {
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0.08, 0.35, 0.65, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.getError();
     });
-    render();
   }
 
-  function detectAPIs() {
-    return {
-      fetch: typeof window.fetch === "function",
-      websocket: typeof window.WebSocket === "function",
-      localStorage: typeof window.localStorage !== "undefined",
-      indexedDB: typeof window.indexedDB !== "undefined",
-      webAssembly: typeof window.WebAssembly !== "undefined",
-      webWorkers: typeof window.Worker === "function",
-      serviceWorker: "serviceWorker" in navigator,
-      broadcastChannel: typeof window.BroadcastChannel === "function",
-      messageChannel: typeof window.MessageChannel === "function",
-      crypto: typeof window.crypto !== "undefined",
-      subtleCrypto: !!(window.crypto && window.crypto.subtle),
-      performance: typeof window.performance !== "undefined",
-      requestAnimationFrame:
-        typeof window.requestAnimationFrame === "function",
-      mutationObserver: typeof window.MutationObserver === "function",
-      intersectionObserver:
-        typeof window.IntersectionObserver === "function",
-      geolocation: !!(navigator.geolocation),
-      onlineStatus: typeof navigator.onLine === "boolean"
-    };
-  }
-
-  function sample() {
-    const state = detectAPIs();
-    const time = timestamp();
-
-    samples.push({ timeMs: time, state: state });
-    elapsed.textContent = "Elapsed: " + time.toFixed(2) + " ms";
-
-    if (time >= durationMs) {
-      finish();
-    } else {
-      render();
+  async function testWebGPU() {
+    if (!navigator.gpu) {
+      resultRow('gpuResults', 'WebGPU', 'Unavailable', 'navigator.gpu is not exposed to this webpage.');
+      log('WebGPU', 'Unavailable', 'navigator.gpu not exposed');
+      return;
+    }
+    resultRow('gpuResults', 'WebGPU API', 'Available', 'navigator.gpu is exposed. Checking whether an adapter can be requested.');
+    log('WebGPU API', 'Available');
+    try {
+      const adapter = await Promise.race([
+        navigator.gpu.requestAdapter(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Adapter request timed out after 4 seconds')), 4000))
+      ]);
+      if (!adapter) {
+        resultRow('gpuResults', 'WebGPU adapter', 'Unavailable', 'The browser did not return an adapter.');
+        log('WebGPU adapter', 'Unavailable', 'no adapter returned');
+        return;
+      }
+      const features = adapter.features ? Array.from(adapter.features).join(', ') : 'Not reported';
+      resultRow('gpuResults', 'WebGPU adapter', 'Available', `Adapter returned. Optional features: ${features || 'none reported'}`);
+      log('WebGPU adapter', 'Available', 'adapter returned');
+      try {
+        const device = await Promise.race([
+          adapter.requestDevice(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Device request timed out after 4 seconds')), 4000))
+        ]);
+        resultRow('gpuResults', 'WebGPU device', 'Passed', 'A standard browser-managed GPU device was created and immediately released.');
+        log('WebGPU device', 'Passed', 'device request succeeded');
+        device.destroy();
+      } catch (error) {
+        resultRow('gpuResults', 'WebGPU device', 'Failed', error.message || String(error));
+        log('WebGPU device', 'Failed', error.message || String(error));
+      }
+    } catch (error) {
+      resultRow('gpuResults', 'WebGPU adapter', 'Failed', error.message || String(error));
+      log('WebGPU adapter', 'Failed', error.message || String(error));
     }
   }
 
-  function render() {
-    eventsBox.textContent = events.map(function (e) {
-      return e.timeMs.toFixed(2) + " ms | " + e.event +
-        " | readyState=" + e.readyState +
-        " | visibility=" + e.visibility;
-    }).join("\n");
-
-    const names = Object.keys(detectAPIs());
-    const lines = [];
-
-    names.forEach(function (name) {
-      const firstTrue = samples.find(function (s) {
-        return s.state[name] === true;
-      });
-      const firstFalse = samples.find(function (s) {
-        return s.state[name] === false;
-      });
-
-      let outcome;
-      if (firstTrue && firstFalse) {
-        outcome = "CHANGED DURING SAMPLING";
-      } else if (firstTrue) {
-        outcome = "Available at first observed sample (" +
-          firstTrue.timeMs.toFixed(2) + " ms or earlier)";
-      } else if (firstFalse) {
-        outcome = "Unavailable throughout sampled period";
-      } else {
-        outcome = "Not tested";
-      }
-
-      lines.push(name + ": " + outcome);
+  async function testStorage() {
+    // Only writes and removes a short test value belonging to this website.
+    const localResult = safeRead(() => {
+      const key = 'jerryjs_v4_test';
+      localStorage.setItem(key, 'ok');
+      const passed = localStorage.getItem(key) === 'ok';
+      localStorage.removeItem(key);
+      return passed;
     });
+    const localPassed = localResult === true;
+    resultRow('browserResults', 'Local Storage', localPassed ? 'Passed' : 'Failed', localPassed ? 'Temporary test value written, read and removed.' : String(localResult));
+    log('Local Storage test', localPassed ? 'Passed' : 'Failed', String(localResult));
 
-    resultsBox.textContent = lines.join("\n");
+    resultRow('browserResults', 'IndexedDB API', typeof indexedDB === 'undefined' ? 'Unavailable' : 'Available', 'API presence only; no database is created.');
+    log('IndexedDB API', typeof indexedDB === 'undefined' ? 'Unavailable' : 'Available');
+
+    if (navigator.storage && typeof navigator.storage.estimate === 'function') {
+      try {
+        const estimate = await navigator.storage.estimate();
+        const usage = Number.isFinite(estimate.usage) ? `${estimate.usage} bytes used` : 'usage not reported';
+        const quota = Number.isFinite(estimate.quota) ? `${estimate.quota} bytes quota` : 'quota not reported';
+        resultRow('browserResults', 'Storage estimate', 'Available', `${usage}; ${quota}. These figures concern website-managed storage, not the console drive.`);
+        log('Storage estimate', 'Available', `${usage}; ${quota}`);
+      } catch (error) {
+        resultRow('browserResults', 'Storage estimate', 'Failed', error.message || String(error));
+        log('Storage estimate', 'Failed', error.message || String(error));
+      }
+    } else {
+      resultRow('browserResults', 'Storage estimate', 'Unavailable', 'Storage estimate API not exposed.');
+      log('Storage estimate', 'Unavailable');
+    }
   }
 
-  function finish() {
-    if (finished) return;
-    finished = true;
-    if (timerId !== null) clearInterval(timerId);
-    status.textContent = "Sampling complete (" +
-      durationMs + " ms).";
-    recordEvent("sampling-complete");
-    render();
+  function testBrowserAPIs() {
+    const checks = [
+      ['Fetch', typeof fetch === 'function'],
+      ['WebSocket', typeof WebSocket === 'function'],
+      ['Web Workers', typeof Worker === 'function'],
+      ['BroadcastChannel', typeof BroadcastChannel === 'function'],
+      ['MessageChannel', typeof MessageChannel === 'function'],
+      ['WebAssembly', typeof WebAssembly !== 'undefined'],
+      ['File System Access picker', typeof window.showOpenFilePicker === 'function'],
+      ['Gamepad API', typeof navigator.getGamepads === 'function']
+    ];
+    checks.forEach(([name, available]) => {
+      resultRow('browserResults', name, available ? 'Available' : 'Unavailable', 'Presence check only; no external files or protected devices are accessed.');
+      log(name, available ? 'Available' : 'Unavailable');
+    });
   }
 
-  function begin() {
-    if (timerId !== null) clearInterval(timerId);
-    events.length = 0;
-    samples.length = 0;
-    finished = false;
-
-    recordEvent("javascript-start");
-    recordEvent("initial-document-state");
-
-    sample();
-    timerId = setInterval(sample, sampleIntervalMs);
+  function testBoundaryIndicators() {
+    const checks = [
+      ['Secure context', !!window.isSecureContext],
+      ['Cross-origin isolated page', !!window.crossOriginIsolated],
+      ['Document origin', location.origin],
+      ['Page visibility', document.visibilityState],
+      ['Online status', navigator.onLine ? 'Online' : 'Offline']
+    ];
+    checks.forEach(([name, value]) => {
+      resultRow('boundaryResults', name, 'Reported', String(value));
+      log(name, 'Reported', String(value));
+    });
+    resultRow('boundaryResults', 'Operating-system access', 'Not tested', 'Webpages do not have a standard API for arbitrary PS5 system access. This diagnostic does not attempt a sandbox escape.');
   }
 
-  document.addEventListener("readystatechange", function () {
-    recordEvent("readystatechange");
-  });
-  document.addEventListener("DOMContentLoaded", function () {
-    recordEvent("DOMContentLoaded");
-  });
-  window.addEventListener("load", function () {
-    recordEvent("window-load");
-  });
-  window.addEventListener("pageshow", function () {
-    recordEvent("pageshow");
-  });
-  window.addEventListener("focus", function () {
-    recordEvent("focus");
-  });
-  window.addEventListener("blur", function () {
-    recordEvent("blur");
-  });
-  document.addEventListener("visibilitychange", function () {
-    recordEvent("visibilitychange");
-  });
-  window.addEventListener("online", function () {
-    recordEvent("online");
-  });
-  window.addEventListener("offline", function () {
-    recordEvent("offline");
+  function lifecycle(name) {
+    log('Lifecycle event', name, `document.readyState=${document.readyState}`);
+  }
+
+  async function runTests() {
+    resetResults();
+    $('runStatus').textContent = 'Tests running…';
+    $('timing').textContent = `First JavaScript timestamp: ${start.toFixed(2)} ms on this page load`;
+    log('JavaScript execution began', 'Observed', 'page-relative timer started');
+
+    testWebGL('WebGL 1');
+    testWebGL('WebGL 2');
+    testBrowserAPIs();
+    testBoundaryIndicators();
+    await testStorage();
+    await testWebGPU();
+
+    $('runStatus').textContent = 'Tests finished. All timestamps are relative to this page’s JavaScript start.';
+    log('Diagnostic run', 'Complete');
+  }
+
+  document.addEventListener('readystatechange', () => lifecycle('readystatechange'));
+  document.addEventListener('DOMContentLoaded', () => lifecycle('DOMContentLoaded'));
+  window.addEventListener('load', () => lifecycle('window load'));
+  window.addEventListener('pageshow', () => lifecycle('pageshow'));
+  document.addEventListener('visibilitychange', () => lifecycle('visibilitychange'));
+
+  $('rerun').addEventListener('click', runTests);
+  $('copy').addEventListener('click', async () => {
+    const text = [
+      'JerryJS v4 results',
+      'Browser: ' + navigator.userAgent,
+      '--- Timestamped log ---',
+      $('log').textContent,
+      '--- API results ---',
+      $('gpuResults').innerText,
+      $('browserResults').innerText,
+      $('boundaryResults').innerText
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      $('copyStatus').textContent = 'Results copied. Paste them into your chat.';
+    } catch (_) {
+      $('copyStatus').textContent = 'Clipboard access was unavailable. You can select and copy the log manually.';
+    }
   });
 
-  document.getElementById("rerun").addEventListener("click", begin);
-  document.getElementById("copy").addEventListener("click", function () {
-    resultsBox.focus();
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(resultsBox);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  });
+  $('browserInfo').textContent = [
+    'User agent: ' + navigator.userAgent,
+    'Platform: ' + (navigator.platform || 'not reported'),
+    'Language: ' + (navigator.language || 'not reported'),
+    'Logical CPU cores reported: ' + (navigator.hardwareConcurrency || 'not reported'),
+    'Secure context: ' + window.isSecureContext,
+    'Page URL origin: ' + location.origin
+  ].join('\n');
 
-  begin();
+  runTests();
 })();
 </script>
 </body>
 </html>
+
