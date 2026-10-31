@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JerryJS Browser Tester</title>
+<title>JerryJS Diagnostic v2</title>
 
 <style>
 body {
@@ -21,12 +21,14 @@ h1 { color: #63b3ff; }
     border-radius: 10px;
 }
 .result { color: #8ee6a0; }
+.error { color: #ff8585; }
 button {
     padding: 12px;
     background: #287bd1;
     color: white;
     border: 0;
     border-radius: 6px;
+    margin: 5px 0;
 }
 </style>
 </head>
@@ -34,81 +36,187 @@ button {
 <body>
 
 <h1>JerryJS</h1>
-<p>Browser Startup Diagnostic v1.0</p>
+<p>Browser Diagnostic v2.0</p>
 
 <div class="panel">
-<h3>Startup information</h3>
-<p id="started">JavaScript: starting...</p>
-<p id="loaded">Page load: waiting...</p>
-<p id="elapsed">Elapsed time: measuring...</p>
+<h3>Startup timings</h3>
+<p id="jsStart">Waiting...</p>
+<p id="pageLoad">Waiting...</p>
+<p id="elapsed">Waiting...</p>
 </div>
 
 <div class="panel">
-<h3>Browser capabilities</h3>
-<div id="apis"></div>
+<h3>Browser information</h3>
+<p id="browser"></p>
+<p id="secure"></p>
 </div>
 
 <div class="panel">
-<h3>Responsiveness</h3>
-<p id="response">Waiting for measurements...</p>
+<h3>API diagnostics</h3>
+<div id="apis">Checking...</div>
 </div>
 
 <div class="panel">
-<h3>Test controls</h3>
-<button onclick="runTest()">Run again</button>
+<h3>Responsiveness test</h3>
+<button onclick="runResponseTest()">Run 10 measurements</button>
+<p id="response">Not tested</p>
+</div>
+
+<div class="panel">
+<h3>Diagnostic log</h3>
+<div id="log">Starting diagnostics...</div>
 </div>
 
 <script>
 const startTime = performance.now();
 
-document.getElementById("started").textContent =
-    "JavaScript started: " + startTime.toFixed(2) + " ms";
+function log(message, error = false) {
+    const p = document.createElement("p");
+    p.textContent = message;
+    if (error) p.className = "error";
+    document.getElementById("log").appendChild(p);
+}
+
+function show(id, message) {
+    document.getElementById(id).textContent = message;
+}
+
+show("jsStart", "JavaScript started: " +
+    startTime.toFixed(2) + " ms");
+
+show("browser", "User agent: " + navigator.userAgent);
+show("secure", "Secure context: " + window.isSecureContext);
 
 function checkAPI(name, available) {
-    return "<p>" + name + ": <span class='result'>" +
+    return "<p>" + name + ": <span class='" +
+        (available ? "result" : "error") + "'>" +
         (available ? "Available" : "Unavailable") +
         "</span></p>";
 }
 
-function checkBrowser() {
+function runDiagnostics() {
     const apis = document.getElementById("apis");
 
+    const wasmAvailable =
+        typeof WebAssembly !== "undefined";
+
+    const idbAvailable =
+        typeof indexedDB !== "undefined";
+
+    const websocketAvailable =
+        typeof WebSocket !== "undefined";
+
+    const storageAvailable =
+        typeof localStorage !== "undefined";
+
+    const workerAvailable =
+        typeof Worker !== "undefined";
+
+    const fetchAvailable =
+        typeof fetch !== "undefined";
+
     apis.innerHTML =
-        checkAPI("Local Storage", typeof localStorage !== "undefined") +
-        checkAPI("Session Storage", typeof sessionStorage !== "undefined") +
-        checkAPI("WebAssembly", typeof WebAssembly !== "undefined") +
-        checkAPI("WebSocket", typeof WebSocket !== "undefined") +
-        checkAPI("Fetch", typeof fetch !== "undefined") +
-        checkAPI("Web Workers", typeof Worker !== "undefined") +
-        checkAPI("IndexedDB", typeof indexedDB !== "undefined") +
-        checkAPI("Performance API", typeof performance !== "undefined");
+        checkAPI("WebAssembly", wasmAvailable) +
+        checkAPI("IndexedDB", idbAvailable) +
+        checkAPI("WebSocket", websocketAvailable) +
+        checkAPI("Local Storage", storageAvailable) +
+        checkAPI("Web Workers", workerAvailable) +
+        checkAPI("Fetch", fetchAvailable);
+
+    log("WebAssembly detected: " + wasmAvailable);
+    log("IndexedDB detected: " + idbAvailable);
+    log("WebSocket detected: " + websocketAvailable);
+    log("Local Storage detected: " + storageAvailable);
+    log("Web Workers detected: " + workerAvailable);
+
+    if (wasmAvailable) {
+        try {
+            const valid = WebAssembly.validate(
+                new Uint8Array([0,97,115,109,1,0,0,0])
+            );
+            log("WebAssembly basic validation: " + valid);
+        } catch (error) {
+            log("WebAssembly test error: " + error.message, true);
+        }
+    } else {
+        log("WebAssembly API does not exist in this page.", true);
+    }
+
+    if (idbAvailable) {
+        try {
+            const request = indexedDB.open(
+                "JerryJS_Diagnostic_Test", 1
+            );
+
+            request.onsuccess = function() {
+                request.result.close();
+
+                const deletion = indexedDB.deleteDatabase(
+                    "JerryJS_Diagnostic_Test"
+                );
+
+                deletion.onsuccess = function() {
+                    log("IndexedDB open and delete test: passed");
+                };
+
+                deletion.onerror = function() {
+                    log("IndexedDB delete test failed", true);
+                };
+            };
+
+            request.onerror = function() {
+                log("IndexedDB open failed: " +
+                    request.error, true);
+            };
+        } catch (error) {
+            log("IndexedDB test error: " + error.message, true);
+        }
+    } else {
+        log("IndexedDB API does not exist in this page.", true);
+    }
 }
 
-function runTest() {
-    const before = performance.now();
+function runResponseTest() {
+    const results = [];
+    let previous = performance.now();
 
-    requestAnimationFrame(function() {
-        const after = performance.now();
+    function measure() {
+        const current = performance.now();
+        results.push(current - previous);
+        previous = current;
 
-        document.getElementById("response").textContent =
-            "Animation frame response: " +
-            (after - before).toFixed(2) + " ms";
+        if (results.length < 10) {
+            requestAnimationFrame(measure);
+        } else {
+            const average = results.reduce(
+                (a, b) => a + b, 0
+            ) / results.length;
 
-        document.getElementById("elapsed").textContent =
-            "Elapsed since JavaScript started: " +
-            (after - startTime).toFixed(2) + " ms";
-    });
+            show("response",
+                "Average animation-frame interval: " +
+                average.toFixed(2) + " ms");
+
+            log("10 animation-frame measurements completed.");
+        }
+    }
+
+    requestAnimationFrame(measure);
 }
 
 window.addEventListener("load", function() {
-    document.getElementById("loaded").textContent =
-        "Page loaded: " + performance.now().toFixed(2) + " ms";
+    const elapsed = performance.now() - startTime;
 
-    checkBrowser();
-    runTest();
+    show("pageLoad",
+        "Page loaded: " + performance.now().toFixed(2) + " ms");
+
+    show("elapsed",
+        "Elapsed since JavaScript started: " +
+        elapsed.toFixed(2) + " ms");
+
+    log("Page load event received.");
 });
 
-checkBrowser();
+runDiagnostics();
 </script>
 
 </body>
