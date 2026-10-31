@@ -4,220 +4,227 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JerryJS Diagnostic v2</title>
-
+<title>JerryJS v3 — API Timeline</title>
 <style>
 body {
-    background: #10131b;
-    color: #e8edf5;
-    font-family: Arial, sans-serif;
-    padding: 20px;
+  background: #10131b;
+  color: #e8edf5;
+  font-family: Arial, sans-serif;
+  padding: 18px;
 }
 h1 { color: #63b3ff; }
 .panel {
-    background: #1c2330;
-    padding: 15px;
-    margin: 12px 0;
-    border-radius: 10px;
+  background: #1c2330;
+  padding: 14px;
+  margin: 12px 0;
+  border-radius: 9px;
 }
-.result { color: #8ee6a0; }
-.error { color: #ff8585; }
 button {
-    padding: 12px;
-    background: #287bd1;
-    color: white;
-    border: 0;
-    border-radius: 6px;
-    margin: 5px 0;
+  padding: 10px 14px;
+  background: #287bd1;
+  color: white;
+  border: 0;
+  border-radius: 6px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 </style>
 </head>
-
 <body>
-
 <h1>JerryJS</h1>
-<p>Browser Diagnostic v2.0</p>
+<p>API Appearance Timeline v3</p>
 
 <div class="panel">
-<h3>Startup timings</h3>
-<p id="jsStart">Waiting...</p>
-<p id="pageLoad">Waiting...</p>
-<p id="elapsed">Waiting...</p>
+  <h3>Timeline status</h3>
+  <p id="status">Starting...</p>
+  <p id="elapsed">Elapsed: 0 ms</p>
 </div>
 
 <div class="panel">
-<h3>Browser information</h3>
-<p id="browser"></p>
-<p id="secure"></p>
+  <h3>Lifecycle events</h3>
+  <pre id="events"></pre>
 </div>
 
 <div class="panel">
-<h3>API diagnostics</h3>
-<div id="apis">Checking...</div>
+  <h3>API availability results</h3>
+  <pre id="results">Collecting results...</pre>
 </div>
 
 <div class="panel">
-<h3>Responsiveness test</h3>
-<button onclick="runResponseTest()">Run 10 measurements</button>
-<p id="response">Not tested</p>
-</div>
-
-<div class="panel">
-<h3>Diagnostic log</h3>
-<div id="log">Starting diagnostics...</div>
+  <button id="rerun">Run again</button>
+  <button id="copy">Select results</button>
 </div>
 
 <script>
-const startTime = performance.now();
+(function () {
+  const start = performance.now();
+  const status = document.getElementById("status");
+  const elapsed = document.getElementById("elapsed");
+  const eventsBox = document.getElementById("events");
+  const resultsBox = document.getElementById("results");
 
-function log(message, error = false) {
-    const p = document.createElement("p");
-    p.textContent = message;
-    if (error) p.className = "error";
-    document.getElementById("log").appendChild(p);
-}
+  const events = [];
+  const samples = [];
+  const durationMs = 5000;
+  const sampleIntervalMs = 100;
 
-function show(id, message) {
-    document.getElementById(id).textContent = message;
-}
+  let finished = false;
+  let timerId = null;
 
-show("jsStart", "JavaScript started: " +
-    startTime.toFixed(2) + " ms");
+  function timestamp() {
+    return +(performance.now() - start).toFixed(2);
+  }
 
-show("browser", "User agent: " + navigator.userAgent);
-show("secure", "Secure context: " + window.isSecureContext);
+  function recordEvent(name) {
+    events.push({
+      timeMs: timestamp(),
+      event: name,
+      readyState: document.readyState,
+      visibility: document.visibilityState
+    });
+    render();
+  }
 
-function checkAPI(name, available) {
-    return "<p>" + name + ": <span class='" +
-        (available ? "result" : "error") + "'>" +
-        (available ? "Available" : "Unavailable") +
-        "</span></p>";
-}
+  function detectAPIs() {
+    return {
+      fetch: typeof window.fetch === "function",
+      websocket: typeof window.WebSocket === "function",
+      localStorage: typeof window.localStorage !== "undefined",
+      indexedDB: typeof window.indexedDB !== "undefined",
+      webAssembly: typeof window.WebAssembly !== "undefined",
+      webWorkers: typeof window.Worker === "function",
+      serviceWorker: "serviceWorker" in navigator,
+      broadcastChannel: typeof window.BroadcastChannel === "function",
+      messageChannel: typeof window.MessageChannel === "function",
+      crypto: typeof window.crypto !== "undefined",
+      subtleCrypto: !!(window.crypto && window.crypto.subtle),
+      performance: typeof window.performance !== "undefined",
+      requestAnimationFrame:
+        typeof window.requestAnimationFrame === "function",
+      mutationObserver: typeof window.MutationObserver === "function",
+      intersectionObserver:
+        typeof window.IntersectionObserver === "function",
+      geolocation: !!(navigator.geolocation),
+      onlineStatus: typeof navigator.onLine === "boolean"
+    };
+  }
 
-function runDiagnostics() {
-    const apis = document.getElementById("apis");
+  function sample() {
+    const state = detectAPIs();
+    const time = timestamp();
 
-    const wasmAvailable =
-        typeof WebAssembly !== "undefined";
+    samples.push({ timeMs: time, state: state });
+    elapsed.textContent = "Elapsed: " + time.toFixed(2) + " ms";
 
-    const idbAvailable =
-        typeof indexedDB !== "undefined";
-
-    const websocketAvailable =
-        typeof WebSocket !== "undefined";
-
-    const storageAvailable =
-        typeof localStorage !== "undefined";
-
-    const workerAvailable =
-        typeof Worker !== "undefined";
-
-    const fetchAvailable =
-        typeof fetch !== "undefined";
-
-    apis.innerHTML =
-        checkAPI("WebAssembly", wasmAvailable) +
-        checkAPI("IndexedDB", idbAvailable) +
-        checkAPI("WebSocket", websocketAvailable) +
-        checkAPI("Local Storage", storageAvailable) +
-        checkAPI("Web Workers", workerAvailable) +
-        checkAPI("Fetch", fetchAvailable);
-
-    log("WebAssembly detected: " + wasmAvailable);
-    log("IndexedDB detected: " + idbAvailable);
-    log("WebSocket detected: " + websocketAvailable);
-    log("Local Storage detected: " + storageAvailable);
-    log("Web Workers detected: " + workerAvailable);
-
-    if (wasmAvailable) {
-        try {
-            const valid = WebAssembly.validate(
-                new Uint8Array([0,97,115,109,1,0,0,0])
-            );
-            log("WebAssembly basic validation: " + valid);
-        } catch (error) {
-            log("WebAssembly test error: " + error.message, true);
-        }
+    if (time >= durationMs) {
+      finish();
     } else {
-        log("WebAssembly API does not exist in this page.", true);
+      render();
     }
+  }
 
-    if (idbAvailable) {
-        try {
-            const request = indexedDB.open(
-                "JerryJS_Diagnostic_Test", 1
-            );
+  function render() {
+    eventsBox.textContent = events.map(function (e) {
+      return e.timeMs.toFixed(2) + " ms | " + e.event +
+        " | readyState=" + e.readyState +
+        " | visibility=" + e.visibility;
+    }).join("\n");
 
-            request.onsuccess = function() {
-                request.result.close();
+    const names = Object.keys(detectAPIs());
+    const lines = [];
 
-                const deletion = indexedDB.deleteDatabase(
-                    "JerryJS_Diagnostic_Test"
-                );
+    names.forEach(function (name) {
+      const firstTrue = samples.find(function (s) {
+        return s.state[name] === true;
+      });
+      const firstFalse = samples.find(function (s) {
+        return s.state[name] === false;
+      });
 
-                deletion.onsuccess = function() {
-                    log("IndexedDB open and delete test: passed");
-                };
+      let outcome;
+      if (firstTrue && firstFalse) {
+        outcome = "CHANGED DURING SAMPLING";
+      } else if (firstTrue) {
+        outcome = "Available at first observed sample (" +
+          firstTrue.timeMs.toFixed(2) + " ms or earlier)";
+      } else if (firstFalse) {
+        outcome = "Unavailable throughout sampled period";
+      } else {
+        outcome = "Not tested";
+      }
 
-                deletion.onerror = function() {
-                    log("IndexedDB delete test failed", true);
-                };
-            };
+      lines.push(name + ": " + outcome);
+    });
 
-            request.onerror = function() {
-                log("IndexedDB open failed: " +
-                    request.error, true);
-            };
-        } catch (error) {
-            log("IndexedDB test error: " + error.message, true);
-        }
-    } else {
-        log("IndexedDB API does not exist in this page.", true);
-    }
-}
+    resultsBox.textContent = lines.join("\n");
+  }
 
-function runResponseTest() {
-    const results = [];
-    let previous = performance.now();
+  function finish() {
+    if (finished) return;
+    finished = true;
+    if (timerId !== null) clearInterval(timerId);
+    status.textContent = "Sampling complete (" +
+      durationMs + " ms).";
+    recordEvent("sampling-complete");
+    render();
+  }
 
-    function measure() {
-        const current = performance.now();
-        results.push(current - previous);
-        previous = current;
+  function begin() {
+    if (timerId !== null) clearInterval(timerId);
+    events.length = 0;
+    samples.length = 0;
+    finished = false;
 
-        if (results.length < 10) {
-            requestAnimationFrame(measure);
-        } else {
-            const average = results.reduce(
-                (a, b) => a + b, 0
-            ) / results.length;
+    recordEvent("javascript-start");
+    recordEvent("initial-document-state");
 
-            show("response",
-                "Average animation-frame interval: " +
-                average.toFixed(2) + " ms");
+    sample();
+    timerId = setInterval(sample, sampleIntervalMs);
+  }
 
-            log("10 animation-frame measurements completed.");
-        }
-    }
+  document.addEventListener("readystatechange", function () {
+    recordEvent("readystatechange");
+  });
+  document.addEventListener("DOMContentLoaded", function () {
+    recordEvent("DOMContentLoaded");
+  });
+  window.addEventListener("load", function () {
+    recordEvent("window-load");
+  });
+  window.addEventListener("pageshow", function () {
+    recordEvent("pageshow");
+  });
+  window.addEventListener("focus", function () {
+    recordEvent("focus");
+  });
+  window.addEventListener("blur", function () {
+    recordEvent("blur");
+  });
+  document.addEventListener("visibilitychange", function () {
+    recordEvent("visibilitychange");
+  });
+  window.addEventListener("online", function () {
+    recordEvent("online");
+  });
+  window.addEventListener("offline", function () {
+    recordEvent("offline");
+  });
 
-    requestAnimationFrame(measure);
-}
+  document.getElementById("rerun").addEventListener("click", begin);
+  document.getElementById("copy").addEventListener("click", function () {
+    resultsBox.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(resultsBox);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
 
-window.addEventListener("load", function() {
-    const elapsed = performance.now() - startTime;
-
-    show("pageLoad",
-        "Page loaded: " + performance.now().toFixed(2) + " ms");
-
-    show("elapsed",
-        "Elapsed since JavaScript started: " +
-        elapsed.toFixed(2) + " ms");
-
-    log("Page load event received.");
-});
-
-runDiagnostics();
+  begin();
+})();
 </script>
-
 </body>
 </html>
