@@ -43,6 +43,7 @@ button {
 }
 
 button:hover { background: #3998ed; }
+button:disabled { opacity: 0.5; cursor: wait; }
 
 .result {
     display: flex;
@@ -55,7 +56,7 @@ button:hover { background: #3998ed; }
 .status { font-weight: bold; }
 .available { color: #58dc91; }
 .unavailable { color: #ff7777; }
-.unknown { color: #ffc66d; }
+.error { color: #ffc66d; }
 
 pre, textarea {
     width: 100%;
@@ -68,8 +69,20 @@ pre, textarea {
 }
 
 textarea {
-    min-height: 150px;
+    min-height: 180px;
     resize: vertical;
+}
+
+.info {
+    color: #b9c7dc;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.notice {
+    color: #ffc66d;
+    font-size: 13px;
+    line-height: 1.5;
 }
 </style>
 </head>
@@ -81,15 +94,20 @@ textarea {
 <p>Cross-platform browser capability diagnostics</p>
 
 <div class="panel">
-    <h2>Device information</h2>
-    <div id="device">Detecting device...</div>
+    <h2>Device and WebKit information</h2>
+    <div id="device" class="info">Detecting environment...</div>
 </div>
 
 <div class="panel">
     <h2>API diagnostics</h2>
     <p id="progress">Ready to test.</p>
-    <button id="runButton" onclick="runTests()">Run API tests</button>
+
+    <button id="runButton" onclick="runTests()">
+        Run API tests
+    </button>
+
     <button onclick="exportResults()">Export JSON</button>
+
     <div id="results"></div>
 </div>
 
@@ -97,7 +115,18 @@ textarea {
     <h2>Detailed report</h2>
     <textarea id="report" readonly
         placeholder="Run diagnostics to generate a report."></textarea>
+
     <button onclick="copyReport()">Copy report</button>
+</div>
+
+<div class="panel">
+    <h2>Diagnostic notes</h2>
+    <p class="notice">
+        These tests only inspect interfaces exposed to this webpage.
+        An unavailable API does not prove a vulnerability exists.
+        Results may be affected by browser policy, permissions,
+        security settings or the captive-portal environment.
+    </p>
 </div>
 
 </div>
@@ -109,21 +138,13 @@ textarea {
     var results = [];
     var report = {};
 
-    function safeCheck(fn) {
-        try {
-            return !!fn();
-        } catch (e) {
-            return false;
-        }
-    }
-
     function getPlatform() {
         var ua = navigator.userAgent || "";
         var platform = navigator.platform || "";
 
         if (/Nintendo Switch/i.test(ua)) return "Nintendo Switch";
-        if (/PlayStation 5|PlayStation 5/i.test(ua)) return "PlayStation 5";
-        if (/PlayStation 4|PlayStation 4/i.test(ua)) return "PlayStation 4";
+        if (/PlayStation 5/i.test(ua)) return "PlayStation 5";
+        if (/PlayStation 4/i.test(ua)) return "PlayStation 4";
         if (/Xbox/i.test(ua)) return "Xbox";
         if (/Android/i.test(ua)) return "Android";
         if (/iPhone|iPad|iPod/i.test(ua)) return "Apple mobile";
@@ -134,39 +155,94 @@ textarea {
         return "Unknown platform";
     }
 
-    function addResult(category, name, supported, details) {
+    function addResult(category, name, state, details) {
         results.push({
             category: category,
             name: name,
-            supported: supported,
+            state: state,
+            supported: state === "AVAILABLE",
             details: details || ""
         });
     }
 
-    function testWebGL(version) {
+    function runCheck(category, name, fn) {
         try {
-            var canvas = document.createElement("canvas");
-            var context = canvas.getContext(version);
+            var result = fn();
 
-            if (!context) return false;
-
-            var info = context.getParameter(
-                context.VERSION
-            );
-
-            return {
-                supported: true,
-                details: info || "Graphics context available"
-            };
+            if (result && typeof result === "object") {
+                addResult(
+                    category,
+                    name,
+                    result.supported ? "AVAILABLE" : "UNAVAILABLE",
+                    result.details || ""
+                );
+            } else {
+                addResult(
+                    category,
+                    name,
+                    result ? "AVAILABLE" : "UNAVAILABLE",
+                    result ? "Available" : "Not exposed"
+                );
+            }
         } catch (e) {
-            return false;
+            addResult(
+                category,
+                name,
+                "ERROR",
+                e && e.message ? e.message : String(e)
+            );
         }
     }
 
-    function testIndexedDB() {
-        return safeCheck(function () {
-            return !!window.indexedDB;
-        });
+    function testWebGL(version) {
+        var canvas = document.createElement("canvas");
+        var context = canvas.getContext(version);
+
+        if (!context) {
+            return {
+                supported: false,
+                details: "Could not create graphics context"
+            };
+        }
+
+        var versionInfo = "Graphics context created";
+
+        try {
+            versionInfo =
+                context.getParameter(context.VERSION) ||
+                versionInfo;
+        } catch (e) {}
+
+        return {
+            supported: true,
+            details: versionInfo
+        };
+    }
+
+    function testLocalStorage() {
+        var storage = window.localStorage;
+        return typeof storage !== "undefined";
+    }
+
+    function testSessionStorage() {
+        var storage = window.sessionStorage;
+        return typeof storage !== "undefined";
+    }
+
+    function testAsyncFunctions() {
+        try {
+            var constructor = window.Function;
+            var test = constructor(
+                "return (async function(){ return true; });"
+            );
+
+            return typeof test() === "function";
+        } catch (e) {
+            return {
+                supported: false,
+                details: "Unavailable or blocked: " + e.message
+            };
+        }
     }
 
     function testAPIs() {
@@ -176,115 +252,215 @@ textarea {
             ["JavaScript", "Promises", function () {
                 return typeof window.Promise === "function";
             }],
+
             ["JavaScript", "Typed Arrays", function () {
                 return typeof window.Uint8Array === "function";
             }],
+
             ["JavaScript", "BigInt", function () {
                 return typeof window.BigInt === "function";
             }],
-            ["JavaScript", "Async Functions", function () {
-                return typeof window.Promise === "function";
-            }],
+
+            ["JavaScript", "Async Functions", testAsyncFunctions],
+
             ["JavaScript", "Proxy", function () {
                 return typeof window.Proxy === "function";
             }],
+
             ["JavaScript", "Reflect", function () {
                 return typeof window.Reflect === "object";
             }],
+
             ["Runtime", "WebAssembly", function () {
                 return typeof window.WebAssembly === "object";
             }],
+
             ["Runtime", "SharedArrayBuffer", function () {
                 return typeof window.SharedArrayBuffer === "function";
             }],
+
             ["Runtime", "Atomics", function () {
                 return typeof window.Atomics === "object";
             }],
+
             ["Graphics", "WebGL 1", function () {
-                return !!testWebGL("webgl");
+                return testWebGL("webgl");
             }],
+
             ["Graphics", "WebGL 2", function () {
-                return !!testWebGL("webgl2");
+                return testWebGL("webgl2");
             }],
+
             ["Graphics", "WebGPU", function () {
-                return !!(navigator.gpu);
+                return !!navigator.gpu;
             }],
-            ["Storage", "IndexedDB", testIndexedDB],
-            ["Storage", "Local Storage", function () {
-                return !!window.localStorage;
+
+            ["Storage", "IndexedDB", function () {
+                return !!window.indexedDB;
             }],
-            ["Storage", "Session Storage", function () {
-                return !!window.sessionStorage;
-            }],
+
+            ["Storage", "Local Storage", testLocalStorage],
+
+            ["Storage", "Session Storage", testSessionStorage],
+
             ["Network", "Fetch", function () {
                 return typeof window.fetch === "function";
             }],
+
             ["Network", "XMLHttpRequest", function () {
                 return typeof window.XMLHttpRequest === "function";
             }],
+
             ["Network", "WebSocket", function () {
                 return typeof window.WebSocket === "function";
             }],
+
             ["Network", "WebRTC", function () {
                 return typeof window.RTCPeerConnection === "function";
             }],
+
             ["Background", "Web Workers", function () {
                 return typeof window.Worker === "function";
             }],
+
             ["Background", "Service Workers", function () {
-                return !!(navigator.serviceWorker);
+                return !!navigator.serviceWorker;
             }],
+
             ["Input", "Gamepad API", function () {
                 return typeof navigator.getGamepads === "function";
             }],
+
             ["Input", "Pointer Events", function () {
                 return typeof window.PointerEvent === "function";
             }],
+
             ["Input", "Touch Events", function () {
-                return ("ontouchstart" in window);
+                return "ontouchstart" in window;
             }],
+
             ["Media", "Web Audio", function () {
-                return !!(window.AudioContext ||
-                    window.webkitAudioContext);
+                return !!(
+                    window.AudioContext ||
+                    window.webkitAudioContext
+                );
             }],
+
             ["Media", "Media Devices", function () {
-                return !!(navigator.mediaDevices);
+                return !!navigator.mediaDevices;
             }],
+
             ["Browser", "Fullscreen API", function () {
-                return !!(document.documentElement.requestFullscreen ||
-                    document.documentElement.webkitRequestFullscreen);
+                var element = document.documentElement;
+
+                return !!(
+                    element.requestFullscreen ||
+                    element.webkitRequestFullscreen
+                );
             }],
+
             ["Browser", "Clipboard API", function () {
-                return !!(navigator.clipboard);
+                return !!navigator.clipboard;
             }],
+
             ["Browser", "TextEncoder", function () {
                 return typeof window.TextEncoder === "function";
             }],
+
             ["Browser", "URL API", function () {
                 return typeof window.URL === "function";
             }],
+
             ["Browser", "Readable Streams", function () {
                 return typeof window.ReadableStream === "function";
             }],
+
             ["Security", "Subtle Crypto", function () {
-                return !!(window.crypto && window.crypto.subtle);
+                return !!(
+                    window.crypto &&
+                    window.crypto.subtle
+                );
             }],
+
             ["Security", "Secure Context", function () {
                 return window.isSecureContext === true;
+            }],
+
+            ["Security", "Cross-Origin Isolation", function () {
+                return window.crossOriginIsolated === true;
+            }],
+
+            ["WebKit", "window.webkit", function () {
+                return !!window.webkit;
+            }],
+
+            ["WebKit", "WebKit Message Handlers", function () {
+                return !!(
+                    window.webkit &&
+                    window.webkit.messageHandlers
+                );
+            }],
+
+            ["WebKit", "WebKit CSS Matrix", function () {
+                return typeof window.WebKitCSSMatrix === "function";
+            }],
+
+            ["WebKit", "WebKit Fullscreen Prefix", function () {
+                return !!(
+                    document.documentElement.webkitRequestFullscreen
+                );
+            }],
+
+            ["WebKit", "WebKit Audio Prefix", function () {
+                return typeof window.webkitAudioContext === "function";
             }]
         ];
 
         for (var i = 0; i < checks.length; i++) {
-            var item = checks[i];
-            var supported = safeCheck(item[2]);
-
-            addResult(
-                item[0],
-                item[1],
-                supported,
-                supported ? "Available" : "Unavailable"
+            runCheck(
+                checks[i][0],
+                checks[i][1],
+                checks[i][2]
             );
         }
+    }
+
+    function getEnvironment() {
+        return {
+            platform: getPlatform(),
+            userAgent: navigator.userAgent || "Unknown",
+            platformString: navigator.platform || "Unknown",
+            vendor: navigator.vendor || "Unknown",
+            language: navigator.language || "Unknown",
+            pageURL: window.location.href,
+            pageProtocol: window.location.protocol,
+            secureContext: window.isSecureContext === true,
+            crossOriginIsolated:
+                window.crossOriginIsolated === true,
+            webkitObject: !!window.webkit,
+            webkitMessageHandlers: !!(
+                window.webkit &&
+                window.webkit.messageHandlers
+            )
+        };
+    }
+
+    function renderDeviceInfo() {
+        var info = getEnvironment();
+        var output = document.getElementById("device");
+
+        output.textContent =
+            "Platform: " + info.platform +
+            "\nUser agent: " + info.userAgent +
+            "\nNavigator platform: " + info.platformString +
+            "\nBrowser vendor: " + info.vendor +
+            "\nLanguage: " + info.language +
+            "\nPage protocol: " + info.pageProtocol +
+            "\nSecure context: " + info.secureContext +
+            "\nCross-origin isolated: " + info.crossOriginIsolated +
+            "\nwindow.webkit: " + info.webkitObject +
+            "\nwebkit.messageHandlers: " +
+            info.webkitMessageHandlers;
     }
 
     function renderResults() {
@@ -293,12 +469,15 @@ textarea {
 
         var available = 0;
         var unavailable = 0;
+        var errors = 0;
 
         for (var i = 0; i < results.length; i++) {
             var item = results[i];
 
-            if (item.supported) {
+            if (item.state === "AVAILABLE") {
                 available++;
+            } else if (item.state === "ERROR") {
+                errors++;
             } else {
                 unavailable++;
             }
@@ -307,32 +486,48 @@ textarea {
             row.className = "result";
 
             var name = document.createElement("span");
-            name.textContent = item.category + " / " + item.name;
+            name.textContent =
+                item.category + " / " + item.name;
 
             var status = document.createElement("span");
-            status.className = "status " +
-                (item.supported ? "available" : "unavailable");
+            status.className = "status ";
 
-            status.textContent = item.supported
-                ? "AVAILABLE"
-                : "UNAVAILABLE";
+            if (item.state === "AVAILABLE") {
+                status.className += "available";
+            } else if (item.state === "ERROR") {
+                status.className += "error";
+            } else {
+                status.className += "unavailable";
+            }
+
+            status.textContent = item.state;
 
             row.appendChild(name);
             row.appendChild(status);
+
             output.appendChild(row);
+
+            if (item.details) {
+                var detail = document.createElement("div");
+                detail.className = "info";
+                detail.style.padding = "0 10px 8px";
+                detail.style.fontSize = "12px";
+                detail.textContent = item.details;
+                output.appendChild(detail);
+            }
         }
 
         document.getElementById("progress").textContent =
             "Completed: " + results.length +
             " tests | Available: " + available +
-            " | Unavailable: " + unavailable;
+            " | Unavailable: " + unavailable +
+            " | Errors: " + errors;
 
         report = {
             project: "JerryJS",
-            version: "1.0",
-            platform: getPlatform(),
-            userAgent: navigator.userAgent || "Unknown",
-            language: navigator.language || "Unknown",
+            version: "1.1",
+            testType: "Browser environment diagnostics",
+            environment: getEnvironment(),
             timestamp: new Date().toISOString(),
             results: results
         };
@@ -342,7 +537,11 @@ textarea {
     }
 
     window.runTests = function () {
-        document.getElementById("runButton").disabled = true;
+        var button = document.getElementById("runButton");
+
+        button.disabled = true;
+        document.getElementById("progress").textContent =
+            "Running diagnostics...";
 
         try {
             testAPIs();
@@ -352,16 +551,16 @@ textarea {
                 "Diagnostics failed: " + e.message;
         }
 
-        document.getElementById("runButton").disabled = false;
+        button.disabled = false;
     };
 
     window.exportResults = function () {
-        var data = JSON.stringify(report, null, 2);
-
         if (!report.results) {
             alert("Run the tests first.");
             return;
         }
+
+        var data = JSON.stringify(report, null, 2);
 
         try {
             var blob = new Blob([data], {
@@ -372,10 +571,12 @@ textarea {
             var link = document.createElement("a");
 
             link.href = url;
-            link.download = "jerryjs-console-report.json";
+            link.download = "jerryjs-switch-report.json";
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
 
-            setTimeout(function () {
+            window.setTimeout(function () {
                 URL.revokeObjectURL(url);
             }, 1000);
         } catch (e) {
@@ -390,16 +591,17 @@ textarea {
         field.select();
 
         try {
-            document.execCommand("copy");
+            var copied = document.execCommand("copy");
+
+            if (!copied) {
+                alert("Select and copy the report manually.");
+            }
         } catch (e) {
             alert("Select and copy the report manually.");
         }
     };
 
-    document.getElementById("device").textContent =
-        "Platform: " + getPlatform() +
-        "\nBrowser: " + navigator.userAgent +
-        "\nLanguage: " + navigator.language;
+    renderDeviceInfo();
 
 })();
 </script>
