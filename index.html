@@ -3,86 +3,144 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JerryJS Universal API Tester</title>
 
 <style>
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+}
 
 body {
     margin: 0;
     padding: 20px;
     background: #10131b;
-    color: #e9edf5;
+    color: #e8edf5;
     font-family: Arial, sans-serif;
 }
 
 .container {
-    max-width: 950px;
+    max-width: 1050px;
     margin: auto;
 }
 
-h1 { color: #66b5ff; }
+h1 {
+    color: #62a8ff;
+    margin-bottom: 5px;
+}
+
+h2 {
+    color: #8abfff;
+    margin-top: 28px;
+}
+
+.subtitle {
+    color: #9ba8bb;
+    margin-bottom: 24px;
+}
 
 .panel {
-    background: #1b2230;
-    border: 1px solid #344057;
+    background: #191f2b;
+    border: 1px solid #303b4e;
     border-radius: 10px;
     padding: 16px;
-    margin: 15px 0;
-}
-
-button {
-    background: #267bd1;
-    border: 0;
-    color: white;
-    padding: 12px 18px;
-    border-radius: 6px;
-    cursor: pointer;
-    margin: 5px;
-}
-
-button:hover { background: #3998ed; }
-button:disabled { opacity: 0.5; cursor: wait; }
-
-.result {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px;
-    border-bottom: 1px solid #344057;
-}
-
-.status { font-weight: bold; }
-.available { color: #58dc91; }
-.unavailable { color: #ff7777; }
-.error { color: #ffc66d; }
-
-pre, textarea {
-    width: 100%;
-    background: #10131b;
-    color: #b9d8ff;
-    border: 1px solid #344057;
-    border-radius: 6px;
-    padding: 12px;
-    overflow-wrap: anywhere;
-}
-
-textarea {
-    min-height: 180px;
-    resize: vertical;
+    margin-bottom: 18px;
 }
 
 .info {
-    color: #b9c7dc;
-    line-height: 1.5;
+    color: #b9c6d9;
+    font-size: 13px;
+    line-height: 1.6;
     overflow-wrap: anywhere;
 }
 
-.notice {
-    color: #ffc66d;
+button {
+    background: #2678d4;
+    color: white;
+    border: 0;
+    border-radius: 6px;
+    padding: 11px 16px;
+    margin: 5px 5px 5px 0;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button.secondary {
+    background: #35445b;
+}
+
+button:active {
+    opacity: 0.75;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th, td {
+    border-bottom: 1px solid #303b4e;
+    padding: 10px 7px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    color: #9dbde5;
+}
+
+.status {
+    font-weight: bold;
+}
+
+.AVAILABLE {
+    color: #55d69e;
+}
+
+.UNAVAILABLE {
+    color: #ffbd69;
+}
+
+.ERROR {
+    color: #ff7777;
+}
+
+.NOT_RUN {
+    color: #9ba8bb;
+}
+
+textarea {
+    width: 100%;
+    min-height: 190px;
+    background: #0c1018;
+    color: #dce8f7;
+    border: 1px solid #35445b;
+    border-radius: 7px;
+    padding: 12px;
+    resize: vertical;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.small {
+    color: #9ba8bb;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.warning {
+    border-left: 4px solid #e7a642;
+    padding: 10px 12px;
+    background: #29251d;
+    color: #f0d6a5;
     font-size: 13px;
     line-height: 1.5;
+}
+
+#progress {
+    color: #8abfff;
+    margin: 12px 0;
 }
 </style>
 </head>
@@ -91,519 +149,658 @@ textarea {
 <div class="container">
 
 <h1>JerryJS Universal API Tester</h1>
-<p>Cross-platform browser capability diagnostics</p>
+<p class="subtitle">Browser capability diagnostics and WebKit compatibility checks</p>
 
 <div class="panel">
-    <h2>Device and WebKit information</h2>
-    <div id="device" class="info">Detecting environment...</div>
+    <h2>Device information</h2>
+    <div id="deviceInfo" class="info">Loading device information...</div>
 </div>
 
 <div class="panel">
-    <h2>API diagnostics</h2>
-    <p id="progress">Ready to test.</p>
-
-    <button id="runButton" onclick="runTests()">
-        Run API tests
-    </button>
-
-    <button onclick="exportResults()">Export JSON</button>
-
-    <div id="results"></div>
+    <h2>Test controls</h2>
+    <button onclick="runAllTests()">Run all tests</button>
+    <button class="secondary" onclick="runBugTests()">Run Bug 265975 diagnostics</button>
+    <button class="secondary" onclick="clearResults()">Clear results</button>
+    <div id="progress">Waiting for tests.</div>
+    <p class="small">
+        AVAILABLE means the normal feature check succeeded.
+        UNAVAILABLE means the feature was not exposed or did not pass.
+        ERROR means the check encountered an exception.
+    </p>
 </div>
 
 <div class="panel">
-    <h2>Detailed report</h2>
-    <textarea id="report" readonly
-        placeholder="Run diagnostics to generate a report."></textarea>
-
-    <button onclick="copyReport()">Copy report</button>
+    <h2>Bug 265975 diagnostic</h2>
+    <div class="warning">
+        These checks test ordinary JavaScript behavior only.
+        They do not reproduce the suspected object-pool memory-corruption
+        condition and cannot establish whether a device is vulnerable.
+    </div>
+    <p class="small">
+        Checks include structuredClone availability, BigInt cloning,
+        typed-array cloning, ArrayBuffer cloning, cyclic references,
+        and preservation of shared references.
+    </p>
 </div>
 
 <div class="panel">
-    <h2>Diagnostic notes</h2>
-    <p class="notice">
-        These tests only inspect interfaces exposed to this webpage.
-        An unavailable API does not prove a vulnerability exists.
-        Results may be affected by browser policy, permissions,
-        security settings or the captive-portal environment.
+    <h2>Results</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Test</th>
+                <th>Status</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody id="results">
+            <tr>
+                <td colspan="3">No tests have been run.</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="panel">
+    <h2>JSON report</h2>
+    <button onclick="generateJSON()">Generate JSON</button>
+    <button class="secondary" onclick="copyJSON()">Copy JSON</button>
+    <textarea id="jsonOutput" placeholder="Your diagnostic report will appear here."></textarea>
+    <p class="small">
+        If Export or Copy does not work in the console browser,
+        select the JSON text and copy it manually.
     </p>
 </div>
 
 </div>
 
 <script>
-(function () {
-    "use strict";
+var results = [];
+var running = false;
 
-    var results = [];
-    var report = {};
+function addResult(name, status, details, section) {
+    var result = {
+        name: name,
+        status: status,
+        details: String(details),
+        section: section || "General"
+    };
 
-    function getPlatform() {
-        var ua = navigator.userAgent || "";
-        var platform = navigator.platform || "";
+    results.push(result);
 
-        if (/Nintendo Switch/i.test(ua)) return "Nintendo Switch";
-        if (/PlayStation 5/i.test(ua)) return "PlayStation 5";
-        if (/PlayStation 4/i.test(ua)) return "PlayStation 4";
-        if (/Xbox/i.test(ua)) return "Xbox";
-        if (/Android/i.test(ua)) return "Android";
-        if (/iPhone|iPad|iPod/i.test(ua)) return "Apple mobile";
-        if (/Windows/i.test(ua) || /Win/i.test(platform)) return "Windows";
-        if (/Mac/i.test(ua) || /Mac/i.test(platform)) return "Mac";
-        if (/Linux/i.test(ua)) return "Linux";
+    var table = document.getElementById("results");
 
-        return "Unknown platform";
+    if (results.length === 1) {
+        table.innerHTML = "";
     }
 
-    function addResult(category, name, state, details) {
-        results.push({
-            category: category,
-            name: name,
-            state: state,
-            supported: state === "AVAILABLE",
-            details: details || ""
-        });
-    }
+    var row = document.createElement("tr");
 
-    function runCheck(category, name, fn) {
-        try {
-            var result = fn();
+    var nameCell = document.createElement("td");
+    nameCell.textContent = name;
 
-            if (result && typeof result === "object") {
-                addResult(
-                    category,
-                    name,
-                    result.supported ? "AVAILABLE" : "UNAVAILABLE",
-                    result.details || ""
-                );
-            } else {
-                addResult(
-                    category,
-                    name,
-                    result ? "AVAILABLE" : "UNAVAILABLE",
-                    result ? "Available" : "Not exposed"
-                );
-            }
-        } catch (e) {
-            addResult(
-                category,
-                name,
-                "ERROR",
-                e && e.message ? e.message : String(e)
-            );
+    var statusCell = document.createElement("td");
+    statusCell.className = "status " + status;
+    statusCell.textContent = status;
+
+    var detailsCell = document.createElement("td");
+    detailsCell.textContent = String(details);
+
+    row.appendChild(nameCell);
+    row.appendChild(statusCell);
+    row.appendChild(detailsCell);
+
+    table.appendChild(row);
+}
+
+function runCheck(name, section, testFunction) {
+    try {
+        var result = testFunction();
+
+        if (result === true) {
+            addResult(name, "AVAILABLE", "Check passed.", section);
+        } else if (result === false || result === null || typeof result === "undefined") {
+            addResult(name, "UNAVAILABLE", "Check did not pass.", section);
+        } else {
+            addResult(name, "AVAILABLE", result, section);
         }
+    } catch (error) {
+        addResult(
+            name,
+            "ERROR",
+            error && error.message ? error.message : String(error),
+            section
+        );
+    }
+}
+
+function getDeviceInfo() {
+    var info = {
+        userAgent: navigator.userAgent || "Unknown",
+        platform: navigator.platform || "Unknown",
+        vendor: navigator.vendor || "Unknown",
+        language: navigator.language || "Unknown",
+        url: location.href,
+        protocol: location.protocol,
+        secureContext: typeof window.isSecureContext !== "undefined"
+            ? window.isSecureContext
+            : "Not exposed",
+        crossOriginIsolated: typeof window.crossOriginIsolated !== "undefined"
+            ? window.crossOriginIsolated
+            : "Not exposed",
+        webkitObject: typeof window.webkit,
+        webkitMessageHandlers: typeof window.webkit !== "undefined"
+            ? typeof window.webkit.messageHandlers
+            : "Not exposed"
+    };
+
+    var output = "";
+
+    for (var key in info) {
+        output += key + ": " + info[key] + "<br>";
     }
 
-    function testWebGL(version) {
+    document.getElementById("deviceInfo").innerHTML = output;
+    return info;
+}
+
+function runBugTests() {
+    results = [];
+    document.getElementById("results").innerHTML = "";
+    document.getElementById("progress").textContent =
+        "Running Bug 265975 compatibility diagnostics...";
+
+    runCheck("structuredClone availability", "Bug 265975", function() {
+        return typeof window.structuredClone === "function";
+    });
+
+    runCheck("BigInt availability", "Bug 265975", function() {
+        return typeof BigInt === "function";
+    });
+
+    runCheck("Typed arrays availability", "Bug 265975", function() {
+        return typeof Uint8Array === "function";
+    });
+
+    runCheck("ArrayBuffer availability", "Bug 265975", function() {
+        return typeof ArrayBuffer === "function";
+    });
+
+    if (typeof window.structuredClone !== "function") {
+        addResult(
+            "Remaining structuredClone diagnostics",
+            "UNAVAILABLE",
+            "structuredClone is not exposed, so cloning behavior cannot be tested.",
+            "Bug 265975"
+        );
+
+        document.getElementById("progress").textContent =
+            "Bug 265975 diagnostics completed.";
+        generateJSON();
+        return;
+    }
+
+    runCheck("Plain object cloning", "Bug 265975", function() {
+        var original = { value: 42, label: "JerryJS" };
+        var cloned = structuredClone(original);
+
+        if (cloned === original) {
+            throw new Error("Clone returned the original object.");
+        }
+
+        if (cloned.value !== 42 || cloned.label !== "JerryJS") {
+            throw new Error("Cloned values did not match.");
+        }
+
+        return "Cloned values preserved correctly.";
+    });
+
+    runCheck("Typed-array cloning", "Bug 265975", function() {
+        var original = new Uint8Array([10, 20, 30, 40]);
+        var cloned = structuredClone(original);
+
+        if (cloned === original) {
+            throw new Error("Clone returned the original typed array.");
+        }
+
+        if (cloned.length !== 4 ||
+            cloned[0] !== 10 ||
+            cloned[1] !== 20 ||
+            cloned[2] !== 30 ||
+            cloned[3] !== 40) {
+            throw new Error("Typed-array values did not match.");
+        }
+
+        return "Uint8Array cloned with values preserved.";
+    });
+
+    runCheck("ArrayBuffer cloning", "Bug 265975", function() {
+        var original = new ArrayBuffer(4);
+        var originalView = new Uint8Array(original);
+
+        originalView[0] = 11;
+        originalView[1] = 22;
+        originalView[2] = 33;
+        originalView[3] = 44;
+
+        var cloned = structuredClone(original);
+        var clonedView = new Uint8Array(cloned);
+
+        if (cloned === original) {
+            throw new Error("Clone returned the original buffer.");
+        }
+
+        if (clonedView[0] !== 11 ||
+            clonedView[1] !== 22 ||
+            clonedView[2] !== 33 ||
+            clonedView[3] !== 44) {
+            throw new Error("ArrayBuffer contents did not match.");
+        }
+
+        return "ArrayBuffer cloned with contents preserved.";
+    });
+
+    runCheck("BigInt cloning", "Bug 265975", function() {
+        if (typeof BigInt !== "function") {
+            throw new Error("BigInt is unavailable.");
+        }
+
+        var original = BigInt("12345678901234567890");
+        var cloned = structuredClone(original);
+
+        if (cloned !== original) {
+            throw new Error("BigInt value did not match.");
+        }
+
+        return "BigInt value cloned correctly.";
+    });
+
+    runCheck("BigInt typed-array cloning", "Bug 265975", function() {
+        if (typeof BigInt64Array !== "function") {
+            throw new Error("BigInt64Array is unavailable.");
+        }
+
+        var original = new BigInt64Array(2);
+        original[0] = BigInt("123");
+        original[1] = BigInt("456");
+
+        var cloned = structuredClone(original);
+
+        if (cloned[0] !== original[0] || cloned[1] !== original[1]) {
+            throw new Error("BigInt typed-array values did not match.");
+        }
+
+        return "BigInt64Array cloned with values preserved.";
+    });
+
+    runCheck("Cyclic reference cloning", "Bug 265975", function() {
+        var original = { name: "cycle" };
+        original.self = original;
+
+        var cloned = structuredClone(original);
+
+        if (cloned.self !== cloned) {
+            throw new Error("Circular reference was not preserved.");
+        }
+
+        return "Circular reference preserved.";
+    });
+
+    runCheck("Shared reference cloning", "Bug 265975", function() {
+        var shared = { value: 99 };
+
+        var original = {
+            first: shared,
+            second: shared
+        };
+
+        var cloned = structuredClone(original);
+
+        if (cloned.first !== cloned.second) {
+            throw new Error("Shared reference relationship changed.");
+        }
+
+        if (cloned.first.value !== 99) {
+            throw new Error("Shared object value changed.");
+        }
+
+        return "Shared object identity preserved within the clone.";
+    });
+
+    runCheck("Nested typed-array cloning", "Bug 265975", function() {
+        var original = {
+            data: new Uint16Array([100, 200, 300]),
+            label: "nested"
+        };
+
+        var cloned = structuredClone(original);
+
+        if (!(cloned.data instanceof Uint16Array)) {
+            throw new Error("Typed-array type was not preserved.");
+        }
+
+        if (cloned.data[0] !== 100 ||
+            cloned.data[1] !== 200 ||
+            cloned.data[2] !== 300) {
+            throw new Error("Nested typed-array values changed.");
+        }
+
+        return "Nested typed array cloned correctly.";
+    });
+
+    document.getElementById("progress").textContent =
+        "Bug 265975 diagnostics completed.";
+
+    generateJSON();
+}
+
+function runGeneralTests() {
+    runCheck("Promises", "General", function() {
+        return typeof Promise === "function";
+    });
+
+    runCheck("Typed Arrays", "General", function() {
+        return typeof Uint8Array === "function" &&
+               typeof Int32Array === "function";
+    });
+
+    runCheck("BigInt", "General", function() {
+        return typeof BigInt === "function";
+    });
+
+    runCheck("Async Functions", "General", function() {
+        try {
+            new Function("return (async function(){ return 1; })");
+            return "Async function syntax supported.";
+        } catch (error) {
+            return false;
+        }
+    });
+
+    runCheck("Proxy", "General", function() {
+        return typeof Proxy === "function";
+    });
+
+    runCheck("Reflect", "General", function() {
+        return typeof Reflect === "object";
+    });
+
+    runCheck("WebAssembly", "General", function() {
+        return typeof WebAssembly === "object";
+    });
+
+    runCheck("SharedArrayBuffer", "General", function() {
+        return typeof SharedArrayBuffer === "function";
+    });
+
+    runCheck("Atomics", "General", function() {
+        return typeof Atomics === "object";
+    });
+
+    runCheck("WebGL 1", "General", function() {
         var canvas = document.createElement("canvas");
-        var context = canvas.getContext(version);
+        var context = canvas.getContext("webgl") ||
+                      canvas.getContext("experimental-webgl");
 
         if (!context) {
-            return {
-                supported: false,
-                details: "Could not create graphics context"
-            };
+            return false;
         }
 
-        var versionInfo = "Graphics context created";
+        return "WebGL version: " + context.getParameter(context.VERSION);
+    });
 
-        try {
-            versionInfo =
-                context.getParameter(context.VERSION) ||
-                versionInfo;
-        } catch (e) {}
+    runCheck("WebGL 2", "General", function() {
+        var canvas = document.createElement("canvas");
+        var context = canvas.getContext("webgl2");
 
-        return {
-            supported: true,
-            details: versionInfo
-        };
-    }
-
-    function testLocalStorage() {
-        var storage = window.localStorage;
-        return typeof storage !== "undefined";
-    }
-
-    function testSessionStorage() {
-        var storage = window.sessionStorage;
-        return typeof storage !== "undefined";
-    }
-
-    function testAsyncFunctions() {
-        try {
-            var constructor = window.Function;
-            var test = constructor(
-                "return (async function(){ return true; });"
-            );
-
-            return typeof test() === "function";
-        } catch (e) {
-            return {
-                supported: false,
-                details: "Unavailable or blocked: " + e.message
-            };
-        }
-    }
-
-    function testAPIs() {
-        results = [];
-
-        var checks = [
-            ["JavaScript", "Promises", function () {
-                return typeof window.Promise === "function";
-            }],
-
-            ["JavaScript", "Typed Arrays", function () {
-                return typeof window.Uint8Array === "function";
-            }],
-
-            ["JavaScript", "BigInt", function () {
-                return typeof window.BigInt === "function";
-            }],
-
-            ["JavaScript", "Async Functions", testAsyncFunctions],
-
-            ["JavaScript", "Proxy", function () {
-                return typeof window.Proxy === "function";
-            }],
-
-            ["JavaScript", "Reflect", function () {
-                return typeof window.Reflect === "object";
-            }],
-
-            ["Runtime", "WebAssembly", function () {
-                return typeof window.WebAssembly === "object";
-            }],
-
-            ["Runtime", "SharedArrayBuffer", function () {
-                return typeof window.SharedArrayBuffer === "function";
-            }],
-
-            ["Runtime", "Atomics", function () {
-                return typeof window.Atomics === "object";
-            }],
-
-            ["Graphics", "WebGL 1", function () {
-                return testWebGL("webgl");
-            }],
-
-            ["Graphics", "WebGL 2", function () {
-                return testWebGL("webgl2");
-            }],
-
-            ["Graphics", "WebGPU", function () {
-                return !!navigator.gpu;
-            }],
-
-            ["Storage", "IndexedDB", function () {
-                return !!window.indexedDB;
-            }],
-
-            ["Storage", "Local Storage", testLocalStorage],
-
-            ["Storage", "Session Storage", testSessionStorage],
-
-            ["Network", "Fetch", function () {
-                return typeof window.fetch === "function";
-            }],
-
-            ["Network", "XMLHttpRequest", function () {
-                return typeof window.XMLHttpRequest === "function";
-            }],
-
-            ["Network", "WebSocket", function () {
-                return typeof window.WebSocket === "function";
-            }],
-
-            ["Network", "WebRTC", function () {
-                return typeof window.RTCPeerConnection === "function";
-            }],
-
-            ["Background", "Web Workers", function () {
-                return typeof window.Worker === "function";
-            }],
-
-            ["Background", "Service Workers", function () {
-                return !!navigator.serviceWorker;
-            }],
-
-            ["Input", "Gamepad API", function () {
-                return typeof navigator.getGamepads === "function";
-            }],
-
-            ["Input", "Pointer Events", function () {
-                return typeof window.PointerEvent === "function";
-            }],
-
-            ["Input", "Touch Events", function () {
-                return "ontouchstart" in window;
-            }],
-
-            ["Media", "Web Audio", function () {
-                return !!(
-                    window.AudioContext ||
-                    window.webkitAudioContext
-                );
-            }],
-
-            ["Media", "Media Devices", function () {
-                return !!navigator.mediaDevices;
-            }],
-
-            ["Browser", "Fullscreen API", function () {
-                var element = document.documentElement;
-
-                return !!(
-                    element.requestFullscreen ||
-                    element.webkitRequestFullscreen
-                );
-            }],
-
-            ["Browser", "Clipboard API", function () {
-                return !!navigator.clipboard;
-            }],
-
-            ["Browser", "TextEncoder", function () {
-                return typeof window.TextEncoder === "function";
-            }],
-
-            ["Browser", "URL API", function () {
-                return typeof window.URL === "function";
-            }],
-
-            ["Browser", "Readable Streams", function () {
-                return typeof window.ReadableStream === "function";
-            }],
-
-            ["Security", "Subtle Crypto", function () {
-                return !!(
-                    window.crypto &&
-                    window.crypto.subtle
-                );
-            }],
-
-            ["Security", "Secure Context", function () {
-                return window.isSecureContext === true;
-            }],
-
-            ["Security", "Cross-Origin Isolation", function () {
-                return window.crossOriginIsolated === true;
-            }],
-
-            ["WebKit", "window.webkit", function () {
-                return !!window.webkit;
-            }],
-
-            ["WebKit", "WebKit Message Handlers", function () {
-                return !!(
-                    window.webkit &&
-                    window.webkit.messageHandlers
-                );
-            }],
-
-            ["WebKit", "WebKit CSS Matrix", function () {
-                return typeof window.WebKitCSSMatrix === "function";
-            }],
-
-            ["WebKit", "WebKit Fullscreen Prefix", function () {
-                return !!(
-                    document.documentElement.webkitRequestFullscreen
-                );
-            }],
-
-            ["WebKit", "WebKit Audio Prefix", function () {
-                return typeof window.webkitAudioContext === "function";
-            }]
-        ];
-
-        for (var i = 0; i < checks.length; i++) {
-            runCheck(
-                checks[i][0],
-                checks[i][1],
-                checks[i][2]
-            );
-        }
-    }
-
-    function getEnvironment() {
-        return {
-            platform: getPlatform(),
-            userAgent: navigator.userAgent || "Unknown",
-            platformString: navigator.platform || "Unknown",
-            vendor: navigator.vendor || "Unknown",
-            language: navigator.language || "Unknown",
-            pageURL: window.location.href,
-            pageProtocol: window.location.protocol,
-            secureContext: window.isSecureContext === true,
-            crossOriginIsolated:
-                window.crossOriginIsolated === true,
-            webkitObject: !!window.webkit,
-            webkitMessageHandlers: !!(
-                window.webkit &&
-                window.webkit.messageHandlers
-            )
-        };
-    }
-
-    function renderDeviceInfo() {
-        var info = getEnvironment();
-        var output = document.getElementById("device");
-
-        output.textContent =
-            "Platform: " + info.platform +
-            "\nUser agent: " + info.userAgent +
-            "\nNavigator platform: " + info.platformString +
-            "\nBrowser vendor: " + info.vendor +
-            "\nLanguage: " + info.language +
-            "\nPage protocol: " + info.pageProtocol +
-            "\nSecure context: " + info.secureContext +
-            "\nCross-origin isolated: " + info.crossOriginIsolated +
-            "\nwindow.webkit: " + info.webkitObject +
-            "\nwebkit.messageHandlers: " +
-            info.webkitMessageHandlers;
-    }
-
-    function renderResults() {
-        var output = document.getElementById("results");
-        output.innerHTML = "";
-
-        var available = 0;
-        var unavailable = 0;
-        var errors = 0;
-
-        for (var i = 0; i < results.length; i++) {
-            var item = results[i];
-
-            if (item.state === "AVAILABLE") {
-                available++;
-            } else if (item.state === "ERROR") {
-                errors++;
-            } else {
-                unavailable++;
-            }
-
-            var row = document.createElement("div");
-            row.className = "result";
-
-            var name = document.createElement("span");
-            name.textContent =
-                item.category + " / " + item.name;
-
-            var status = document.createElement("span");
-            status.className = "status ";
-
-            if (item.state === "AVAILABLE") {
-                status.className += "available";
-            } else if (item.state === "ERROR") {
-                status.className += "error";
-            } else {
-                status.className += "unavailable";
-            }
-
-            status.textContent = item.state;
-
-            row.appendChild(name);
-            row.appendChild(status);
-
-            output.appendChild(row);
-
-            if (item.details) {
-                var detail = document.createElement("div");
-                detail.className = "info";
-                detail.style.padding = "0 10px 8px";
-                detail.style.fontSize = "12px";
-                detail.textContent = item.details;
-                output.appendChild(detail);
-            }
+        if (!context) {
+            return false;
         }
 
-        document.getElementById("progress").textContent =
-            "Completed: " + results.length +
-            " tests | Available: " + available +
-            " | Unavailable: " + unavailable +
-            " | Errors: " + errors;
+        return "WebGL version: " + context.getParameter(context.VERSION);
+    });
 
-        report = {
-            project: "JerryJS",
-            version: "1.1",
-            testType: "Browser environment diagnostics",
-            environment: getEnvironment(),
-            timestamp: new Date().toISOString(),
-            results: results
-        };
+    runCheck("WebGPU", "General", function() {
+        return typeof navigator.gpu !== "undefined";
+    });
 
-        document.getElementById("report").value =
-            JSON.stringify(report, null, 2);
+    runCheck("IndexedDB", "General", function() {
+        return typeof indexedDB !== "undefined";
+    });
+
+    runCheck("Local Storage", "General", function() {
+        localStorage.setItem("jerryjs_test", "ok");
+        var value = localStorage.getItem("jerryjs_test");
+        localStorage.removeItem("jerryjs_test");
+
+        return value === "ok";
+    });
+
+    runCheck("Session Storage", "General", function() {
+        sessionStorage.setItem("jerryjs_test", "ok");
+        var value = sessionStorage.getItem("jerryjs_test");
+        sessionStorage.removeItem("jerryjs_test");
+
+        return value === "ok";
+    });
+
+    runCheck("Fetch", "General", function() {
+        return typeof fetch === "function";
+    });
+
+    runCheck("XMLHttpRequest", "General", function() {
+        return typeof XMLHttpRequest === "function";
+    });
+
+    runCheck("WebSocket", "General", function() {
+        return typeof WebSocket === "function";
+    });
+
+    runCheck("WebRTC", "General", function() {
+        return typeof RTCPeerConnection === "function";
+    });
+
+    runCheck("Web Workers", "General", function() {
+        return typeof Worker === "function";
+    });
+
+    runCheck("Service Workers", "General", function() {
+        return "serviceWorker" in navigator;
+    });
+
+    runCheck("Gamepad", "General", function() {
+        return typeof navigator.getGamepads === "function";
+    });
+
+    runCheck("Pointer Events", "General", function() {
+        return typeof PointerEvent === "function";
+    });
+
+    runCheck("Touch Events", "General", function() {
+        return "ontouchstart" in window;
+    });
+
+    runCheck("Web Audio", "General", function() {
+        return typeof AudioContext === "function" ||
+               typeof webkitAudioContext === "function";
+    });
+
+    runCheck("Media Devices", "General", function() {
+        return !!(navigator.mediaDevices);
+    });
+
+    runCheck("Fullscreen", "General", function() {
+        return !!(document.documentElement.requestFullscreen ||
+                  document.documentElement.webkitRequestFullscreen);
+    });
+
+    runCheck("Clipboard", "General", function() {
+        return !!(navigator.clipboard &&
+                  navigator.clipboard.writeText);
+    });
+
+    runCheck("TextEncoder", "General", function() {
+        return typeof TextEncoder === "function";
+    });
+
+    runCheck("URL", "General", function() {
+        return typeof URL === "function";
+    });
+
+    runCheck("Readable Streams", "General", function() {
+        return typeof ReadableStream === "function";
+    });
+
+    runCheck("Subtle Crypto", "General", function() {
+        return !!(window.crypto && crypto.subtle);
+    });
+
+    runCheck("Secure Context", "General", function() {
+        return typeof window.isSecureContext !== "undefined"
+            ? window.isSecureContext
+            : false;
+    });
+
+    runCheck("WebKit Object", "General", function() {
+        return typeof window.webkit !== "undefined";
+    });
+
+    runCheck("WebKit Message Handlers", "General", function() {
+        return typeof window.webkit !== "undefined" &&
+               typeof window.webkit.messageHandlers !== "undefined";
+    });
+
+    runCheck("WebKit CSS Matrix", "General", function() {
+        return typeof WebKitCSSMatrix === "function";
+    });
+
+    runCheck("User Agent", "General", function() {
+        return navigator.userAgent || false;
+    });
+
+    runCheck("Platform", "General", function() {
+        return navigator.platform || false;
+    });
+
+    runCheck("Cross-Origin Isolation", "General", function() {
+        return typeof window.crossOriginIsolated !== "undefined"
+            ? String(window.crossOriginIsolated)
+            : "Not exposed";
+    });
+}
+
+function runAllTests() {
+    if (running) {
+        return;
     }
 
-    window.runTests = function () {
-        var button = document.getElementById("runButton");
+    running = true;
+    results = [];
+    document.getElementById("results").innerHTML = "";
+    document.getElementById("progress").textContent =
+        "Running all diagnostics...";
 
-        button.disabled = true;
-        document.getElementById("progress").textContent =
-            "Running diagnostics...";
+    runGeneralTests();
+    runBugTestsAfterGeneral();
 
-        try {
-            testAPIs();
-            renderResults();
-        } catch (e) {
+    running = false;
+
+    document.getElementById("progress").textContent =
+        "All diagnostics completed.";
+
+    generateJSON();
+}
+
+function runBugTestsAfterGeneral() {
+    var previousResults = results.slice(0);
+    runBugTests();
+    var bugResults = results.slice(0);
+
+    results = previousResults.concat(bugResults);
+
+    renderResults();
+}
+
+function renderResults() {
+    var table = document.getElementById("results");
+    table.innerHTML = "";
+
+    for (var i = 0; i < results.length; i++) {
+        var row = document.createElement("tr");
+
+        var nameCell = document.createElement("td");
+        nameCell.textContent = results[i].name;
+
+        var statusCell = document.createElement("td");
+        statusCell.textContent = results[i].status;
+        statusCell.className = "status " + results[i].status;
+
+        var detailsCell = document.createElement("td");
+        detailsCell.textContent = results[i].details;
+
+        row.appendChild(nameCell);
+        row.appendChild(statusCell);
+        row.appendChild(detailsCell);
+
+        table.appendChild(row);
+    }
+}
+
+function clearResults() {
+    results = [];
+    document.getElementById("results").innerHTML =
+        '<tr><td colspan="3">No tests have been run.</td></tr>';
+
+    document.getElementById("jsonOutput").value = "";
+    document.getElementById("progress").textContent =
+        "Results cleared.";
+}
+
+function generateJSON() {
+    var report = {
+        tool: "JerryJS Universal API Tester",
+        version: "1.2",
+        generatedAt: new Date().toISOString(),
+        device: getDeviceInfo(),
+        bug265975Note:
+            "Compatibility diagnostics only. Does not prove vulnerability presence.",
+        results: results
+    };
+
+    var json = JSON.stringify(report, null, 2);
+    document.getElementById("jsonOutput").value = json;
+
+    return json;
+}
+
+function copyJSON() {
+    var output = document.getElementById("jsonOutput");
+
+    if (!output.value) {
+        generateJSON();
+    }
+
+    output.focus();
+    output.select();
+
+    try {
+        var copied = document.execCommand("copy");
+
+        if (copied) {
             document.getElementById("progress").textContent =
-                "Diagnostics failed: " + e.message;
+                "JSON copied.";
+        } else {
+            document.getElementById("progress").textContent =
+                "Select and copy the JSON manually.";
         }
+    } catch (error) {
+        document.getElementById("progress").textContent =
+            "Select and copy the JSON manually.";
+    }
+}
 
-        button.disabled = false;
-    };
-
-    window.exportResults = function () {
-        if (!report.results) {
-            alert("Run the tests first.");
-            return;
-        }
-
-        var data = JSON.stringify(report, null, 2);
-
-        try {
-            var blob = new Blob([data], {
-                type: "application/json"
-            });
-
-            var url = URL.createObjectURL(blob);
-            var link = document.createElement("a");
-
-            link.href = url;
-            link.download = "jerryjs-switch-report.json";
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            window.setTimeout(function () {
-                URL.revokeObjectURL(url);
-            }, 1000);
-        } catch (e) {
-            document.getElementById("report").value = data;
-        }
-    };
-
-    window.copyReport = function () {
-        var field = document.getElementById("report");
-
-        field.focus();
-        field.select();
-
-        try {
-            var copied = document.execCommand("copy");
-
-            if (!copied) {
-                alert("Select and copy the report manually.");
-            }
-        } catch (e) {
-            alert("Select and copy the report manually.");
-        }
-    };
-
-    renderDeviceInfo();
-
-})();
+getDeviceInfo();
 </script>
+
 </body>
 </html>
